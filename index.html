@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>桜の招待状フォーム</title>
+  <style>
+    :root{
+      /* Daytime Kamiyama palette (temporary) */
+      --bg1:#eef2f1;        /* sky white */
+      --bg2:#dfe7e3;        /* mountain haze */
+      --text:#1f2933;       /* soft charcoal */
+      --muted:rgba(31,41,51,.65);
+      --card:rgba(255,255,255,.78);
+      --border:rgba(0,0,0,.08);
+      --accent1:#e8b7c9;    /* sakura pink (low saturation) */
+      --accent2:#b8cfc3;    /* fresh green */
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; margin:0; }
+    body{
+      font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1200px 700px at 20% 10%, rgba(232,183,201,.35), transparent 55%),
+        radial-gradient(1000px 800px at 80% 20%, rgba(184,207,195,.35), transparent 60%),
+        linear-gradient(180deg, var(--bg1), var(--bg2));
+      overflow:hidden;
+      user-select:none;
+    }
+
+    /* どの層も「必要なときだけ display:grid/block」 */
+    .layer{ position:fixed; inset:0; }
+
+    /* 背面花びら（通常） */
+    #petals{
+      position:fixed; inset:0; width:100%; height:100%;
+      z-index:0;
+      display:none; /* 状態管理でON */
+    }
+
+    /* 最前面花吹雪（祝福の瞬間だけ） */
+    #petalsFront{
+      position:fixed; inset:0; width:100%; height:100%;
+      z-index:9999;
+      pointer-events:none;
+      display:none; /* 状態管理でON */
+    }
+
+    /* Intro */
+    .stage{
+      z-index:1;
+      display:none;
+      place-items:center;
+      padding:18px;
+      text-align:center;
+    }
+
+    .card{
+      width:min(760px, 92vw);
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:22px;
+      padding:22px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.15);
+      backdrop-filter: saturate(1.05) blur(6px);
+    }
+    h1{ margin:0 0 10px; font-size:22px; letter-spacing:.02em; }
+    p{ margin:0; color:var(--muted); line-height:1.7; }
+    .hint{ margin-top:14px; font-size:13px; color: rgba(31,41,51,.62); }
+    .tapAny{ margin-top:10px; font-size:12px; color: rgba(31,41,51,.55); }
+
+    /* 文中で一文字だけ小さくしたい場合に使う */
+    .small-char{
+      font-size: .72em;
+      line-height: 1;
+      vertical-align: baseline;
+      opacity: .85;
+    }
+
+    /* 段落を分けずに、行の後ろに少しだけ余白を作るためのスペーサー */
+    .vspace{
+      display:block;
+      height:8px; /* 標準。必要なら全体で一括調整 */
+    }
+    .vspace.sm{ height:4px; }
+    .vspace.lg{ height:20px; }
+    /*段落スペーサーのバリエーション
+      標準
+        <span class="vspace" aria-hidden="true"></span>
+      少し控えめ
+        <span class="vspace sm" aria-hidden="true"></span>
+      気持ち大きめ
+        <span class="vspace lg" aria-hidden="true"></span>
+
+    /* Envelope layer */
+    .letterWrap{
+      z-index:2;
+      display:none;
+      pointer-events:none;
+    }
+    .envelope{
+      position:absolute;
+      left:50%;
+      top:45%;
+      transform: translate(-50%,-50%) rotate(-6deg);
+      width:min(380px, 82vw);
+      height:250px;
+      pointer-events:auto;
+      cursor:pointer;
+      animation: floatIn 1.25s ease-out both;
+      filter: drop-shadow(0 14px 26px rgba(0,0,0,.18));
+      transform-style: preserve-3d;
+      perspective: 900px;
+      perspective-origin: 50% 40%;
+    }
+    @keyframes floatIn{
+      0%{ transform: translate(-50%,-50%) translateY(160px) rotate(-10deg) scale(.92); opacity:0; }
+      100%{ transform: translate(-50%,-50%) translateY(0) rotate(-6deg) scale(1); opacity:1; }
+    }
+    .env-body{
+      position:absolute; inset:0;
+      border-radius:6px;
+      background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(245,248,246,.9));
+      border:1px solid rgba(255,255,255,.14);
+      overflow:hidden;
+    }
+    .env-bottom{
+      position:absolute; left:0; right:0; bottom:-1px; height:56%;
+      background: linear-gradient(180deg, rgba(0,0,0,.00), rgba(0,0,0,.14));
+      clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+      opacity:.40;
+    }
+    .env-flap{
+      position:absolute; left:0; right:0; top:-1px; height:70%;
+      transform-origin: 50% 0%;
+      transform: rotateX(0deg);
+      transition: transform 700ms cubic-bezier(.2,.85,.15,1.05);
+      z-index: 3;
+      pointer-events:none;
+      backface-visibility: visible;
+      transform-style: preserve-3d;
+    }
+    .envelope.open .env-flap{ transform: rotateX(165deg); }
+
+    .env-top{
+      position:absolute; inset:0;
+
+      /* フラップの存在感UP（本体より少しだけ暗い） */
+      background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(216,225,221,.92));
+
+      /* ★ フラップを深くする（ここが要望ポイント） */
+      clip-path: polygon(0 0, 100% 0, 50% 90%);
+
+      /* 境界線を少しだけ強く */
+      border: 1px solid rgba(0,0,0,.10);
+      /* 折り目の“影”と下辺の“線”を追加して読みやすく */
+      box-shadow:
+        inset 0 -18px 26px rgba(0,0,0,.10),
+        0 1px 0 rgba(0,0,0,.06);
+
+      border-top-left-radius:6px;
+      border-top-right-radius:6px;
+      backface-visibility: visible;
+      z-index: 1;
+    }
+
+    /* removed duplicate/contradictory .env-flap, .env-top and .seal backface rules */
+
+    .seal{
+      position:absolute; left:50%; top:82%;
+      transform: translate(-50%,-50%);
+      width:56px; height:56px;
+      border-radius:999px;
+      background:
+        radial-gradient(circle at 30% 25%, rgba(255,255,255,.8), rgba(255,255,255,.4)),
+        linear-gradient(135deg, #e8b7c9, #d6c4aa);
+      border:1px solid rgba(255,255,255,.22);
+      display:grid; place-items:center;
+      font-weight:800;
+      color:rgba(255,255,255,.92);
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+      z-index: 2;
+
+      transition: opacity 420ms ease, transform 420ms ease, filter 420ms ease;
+      backface-visibility: visible;
+    }
+
+    .envelope.open .seal{
+      opacity: 0;
+      filter: none;
+      transform: translate(-50%,-50%) scale(.98);
+    }
+
+    /* mouth slot */
+    .mouth{
+      position:absolute;
+      left:50%;
+      top:22px;
+      transform: translateX(-50%);
+      width: calc(100% - 84px);
+      height: 16px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.10);
+      filter: blur(.2px);
+      pointer-events:none;
+      z-index: 5;
+    }
+
+    /* Paper layer (top-only) */
+    .paperLayer{
+      z-index:6;
+      display:none;
+      pointer-events:none;
+    }
+    .paper{
+      position:fixed;
+      left:0; top:0;
+      width:10px; height:10px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff, #f4f6f5);
+      border:1px solid rgba(255,255,255,.14);
+      box-shadow: 0 12px 28px rgba(0,0,0,.18);
+      overflow:hidden;
+
+      opacity:0;
+      pointer-events:none;
+    }
+    .paper.full{
+      border-radius: 18px;
+      pointer-events:auto;
+    }
+    .paperInner{
+      color: rgba(31,41,51,.92);
+      height:100%;
+      padding:16px;
+      overflow:auto;
+      opacity:0;
+      transform: translateY(10px);
+      transition: opacity 720ms ease, transform 720ms ease;
+    }
+    .paper.revealed .paperInner{
+      opacity:1;
+      transform: translateY(0);
+    }
+    .paper h2{ margin:0 0 8px; font-size:18px; }
+    .paper p{ margin:0 0 10px; color: rgba(31,41,51,.78); }
+    /* ラベル：値（コロン揃え） */
+    .paper .kv{
+      margin: 0 0 10px;
+    }
+    .paper .kv .row{
+      display: grid;
+      grid-template-columns: 4em 1em 1fr; /* ← ラベル幅調整ポイント */
+      column-gap: .2em;
+      line-height: 1.7;
+      color: rgba(31,41,51,.78);
+    }
+    .paper .kv .c{
+      text-align: center;
+      opacity: .75;
+    }
+    /* 箇条書きの直前だけ、段落の下余白を消して詰める（Chrome/ArcはOK） */
+    .paper p:has(+ .letterList){
+      margin-bottom: 0;
+    }
+
+    /* 保険：もし :has が効かない環境があれば、このクラスで同じ効果 */
+    .paper p.noGapAfter{
+      margin-bottom: 0;
+    }
+    /* 手紙内の箇条書き：前後の余白を消して、他の行と同じリズムにする */
+    .paper .letterList{
+      margin: 0;
+      padding-left: 1.2em;
+      color: rgba(31,41,51,.78);
+      line-height: 1.7;
+    }
+    .paper p + .letterList{ margin-top: 0; }
+    .paper .letterList + p{ margin-top: 0; }
+    .paper .letterList li{
+      margin: 0;
+      padding: 0;
+    }
+    .small{ font-size:12px; color: rgba(31,41,51,.55); }
+    .divider{ margin:12px 0; height:1px; background: rgba(31,41,51,.10); }
+
+    .toForm{
+      position: sticky;
+      bottom: 0;
+      margin-top: 10px;
+      padding-top: 10px;
+      background: linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,.78) 40%, rgba(255,255,255,.92));
+      border-top: 1px solid rgba(31,41,51,.10);
+      opacity:0;
+      transform: translateY(10px);
+      pointer-events:none;
+      transition: opacity 420ms ease, transform 420ms ease;
+    }
+    .toForm.show{
+      opacity:1;
+      transform: translateY(0);
+      pointer-events:auto;
+    }
+    .btn{
+      width:100%;
+      border:none;
+      border-radius:12px;
+      padding:12px 14px;
+      font-weight:800;
+      color:white;
+      background: linear-gradient(90deg, var(--accent1), var(--accent2));
+      cursor:pointer;
+    }
+    .btn:active{ transform: translateY(1px); }
+
+    /* Form layer (top-only) */
+    .formOverlay{
+      z-index:7;
+      display:none;
+      place-items:center;
+      padding:18px;
+      pointer-events:auto;
+      background: rgba(0,0,0,.35);
+      backdrop-filter: blur(6px);
+    }
+    .formCard{
+      width:min(860px, 94vw);
+      height:min(86vh, 900px);
+      padding:0;
+      overflow:hidden;
+      animation: pop 520ms ease both;
+    }
+    @keyframes pop{
+      from{ transform: translateY(12px); opacity:0; }
+      to{ transform: translateY(0); opacity:1; }
+    }
+    .formTop{
+      padding:14px 16px;
+      border-bottom:1px solid rgba(255,255,255,.12);
+      display:flex;
+      gap:10px;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .formTop .t{ text-align:left; }
+    .formTop .t strong{ display:block; font-size:14px; }
+    .formTop .t span{ display:block; font-size:12px; color: rgba(31,41,51,.55); margin-top:2px; }
+    .ghost{
+      border: 1px solid rgba(31,41,51,.14);
+      background: rgba(255,255,255,.72);
+      color: rgba(31,41,51,.86);
+      border-radius:12px;
+      padding:10px 12px;
+      font-weight:800;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .ghost:disabled{
+      opacity: .45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .ghost:active{ transform: translateY(1px); }
+    .iframeWrap{ height:calc(100% - 58px); background: rgba(255,255,255,.55); }
+
+    iframe{ width:100%; height:100%; border:0; }
+
+    /* Debug HUD (コンソール不要で状態確認) */
+    #debugHud{
+      position:fixed;
+      left:10px;
+      bottom:10px;
+      z-index:99999;
+      max-width:min(520px, calc(100vw - 20px));
+      font-size:11px;
+      line-height:1.4;
+      color:rgba(255,255,255,.92);
+      background:rgba(0,0,0,.55);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:12px;
+      padding:8px 10px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 12px 30px rgba(0,0,0,.35);
+      display:none;
+      pointer-events:none;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+
+    /* Finale layer (top-only) */
+    .finale{
+      z-index:8;
+      display:none;
+      place-items:center;
+      pointer-events:none;
+    }
+    .finaleText{
+      text-align:center;
+      padding:18px 20px;
+      border-radius:22px;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.85);
+      color:#1f2933;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 55px rgba(0,0,0,.35);
+      opacity:0;
+      transform: translateY(8px);
+      transition: opacity 1100ms ease, transform 1100ms ease;
+    }
+    .finaleText.show{
+      opacity:1;
+      transform: translateY(0);
+    }
+    .finaleText h1{ font-size:26px; margin:0 0 10px; }
+    .finaleText p{ margin:0; color: rgba(31,41,51,.68); }
+</style>
+  <style>
+    #clickHint{
+      position:fixed;
+      left:50%;
+      top:72.5%; /* fallback（JSで上書きする） */
+      transform: translate(-50%,-50%);
+      font-size:12px;
+      letter-spacing:.04em;
+      color: rgba(31,41,51,.55);
+      opacity:0;
+      transition: opacity 420ms ease;
+      pointer-events:none;
+      z-index:5;
+      white-space:nowrap;
+    }
+    #clickHint.show{
+      opacity:1;
+      transform: translate(-50%,-50%);
+    }
+  </style>
+</head>
+<body>
+  <!-- canvases -->
+  <canvas id="petals"></canvas>
+  <canvas id="petalsFront"></canvas>
+
+  <!-- intro -->
+  <div class="layer stage" id="stage">
+    <div class="card" id="introCard">
+      <h1>4期生の皆さんへ</h1>
+      <p>
+        画面をタップ（クリック）してください。
+      </p>
+      <div class="hint">※ 音は出ません / PC推奨</div>
+    </div>
+  </div>
+
+  <!-- envelope -->
+  <div class="layer letterWrap" id="letterWrap" aria-hidden="true">
+    <div class="envelope" id="envelope" role="button" aria-label="封筒を開く">
+      <div class="env-body"></div>
+      <div class="env-bottom"></div>
+
+      <div class="env-flap">
+        <div class="env-top"></div>
+        <div class="seal"><span>✿</span></div>
+      </div>
+
+      <div class="mouth" id="mouth"></div>
+    </div>
+  </div>
+
+  <!-- paper -->
+  <div class="layer paperLayer" id="paperLayer" aria-hidden="true">
+    <div class="paper" id="paper">
+      <div class="paperInner" id="paperInner">
+
+        <h2>春から神山で学ぶあなた<span class="small-char"> へ</span></h2>
+        <div class="divider"></div>
+
+        <p>
+          改めまして、合格おめでとうございます。<br />
+          春から同じ学校で学ぶ仲間として、在学生一同、とても嬉しく思っています。
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+        
+        <p>
+          私たちは毎年、新入生のみなさんの「入学初志」を記録するドキュメンタリー動画を制作しています。<br />
+          <span class="vspace sm" aria-hidden="true"></span>
+          これは、成果や成功談を見せるための映像ではありません。<br />
+          入学前の"今この瞬間"に、何を考え、何に期待し、何に不安を感じているのか。<br />
+          その背景ごと残しておくことを、大切にしている映像です。<br />
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+        
+        <p>
+          今回お願いしているアンケートは、その入学初志動画の内容を考えるためのものです。
+        </p>
+        <ul class="letterList">
+          <li>どんなテーマや視点で映像をつくるか</li>
+          <li>どんな人に、どんな取材をさせてもらうか</li>
+        </ul>
+        <p>
+          を、在学生・制作メンバーで話し合っています。
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+        
+        <p>
+          そのため、内容によっては、後日あらためて取材の相談をさせてもらう可能性があります。<br />
+          ただし、<br />
+        </p>
+        <ul class="letterList">
+          <li>取材を受けるかどうかは完全に自由です</li>
+          <li>アンケートに答えたからといって、必ず取材されるわけではありません</li>
+        </ul>
+        <p>
+          無理のない範囲で、安心して答えてもらえたら嬉しいです。
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+        
+        <p>
+          今は、期待と同時に、不安や迷いもある時期かもしれません。<br />
+          うまく言葉にできなくても大丈夫ですし、立派なことを書く必要もありません。<br />
+          今の正直な気持ちを、そのまま教えてください。
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+        
+        <p>▼ このサイトの次のステップがアンケートになります</p>
+        <div class="kv">
+          <div class="row"><span class="k">質問数</span><span class="c">：</span><span class="v">10問程度</span></div>
+          <div class="row"><span class="k">回答締切</span><span class="c">：</span><span class="v">1月31日</span></div>
+          <span class="vspace" aria-hidden="true"></span>
+        </div>
+
+        <p>
+          このアンケートが、<br />
+          入学前に一度立ち止まり、自分自身と向き合う小さなきっかけになれば嬉しいです。<br />
+          春に神山でお会いできるのを、心から楽しみにしています。
+          <span class="vspace" aria-hidden="true"></span>
+        </p>
+
+        <p style="text-align: right">
+          在学生一同（代表）<br />
+        </p>
+        <div class="divider"></div>
+
+        <p class="small">
+          この手紙を読み終えたら、下のボタンからフォームへ進んでください。
+        </p>
+        <div id="sentinel" style="height:1px;"></div>
+        <div class="toForm" id="toForm">
+          <button class="btn" id="toFormBtn" type="button">フォームへ進む</button>
+          <div class="tapAny">フォーム送信後、自動で次のステップに進みます。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- form -->
+  <div class="layer formOverlay" id="formOverlay" aria-hidden="true">
+    <div class="card formCard">
+      <div class="formTop">
+        <div class="t">
+          <strong>フォーム記入</strong>
+          <span>送信後、自動で次のステップに進みます。</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="ghost" id="closeForm" type="button">閉じる</button>
+          <button class="ghost" id="manualNext" type="button" style="display:none;">次へ</button>
+        </div>
+      </div>
+      <div class="iframeWrap">
+        <iframe
+          src="https://docs.google.com/forms/d/e/1FAIpQLScDh-0RFpnU0_T03JqakGaweGsXMrq4-tslGCMjE6ftcunCqQ/viewform?embedded=true"
+          title="Google Form">読み込んでいます…</iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- finale -->
+  <div class="layer finale" id="finale" aria-hidden="true">
+    <div class="finaleText" id="finaleText">
+      <h1>合格おめでとう！！</h1>
+      <p>神山での毎日が、あなたにとって素敵な日々になりますように！</p>
+      <div class="hint">これでフォームはおわりです。回答ありがとうございました。</div>
+    </div>
+  </div>
+
+  <!-- debug HUD (must be inside body before script runs) -->
+  <div id="debugHud" aria-hidden="true"></div>
+
+  <div id="clickHint" aria-hidden="true">封筒をクリックしてください</div>
+
+  <script>
+    /***********************
+     * Layer manager: 常に「最前面だけ」表示
+     ***********************/
+    const stage      = document.getElementById('stage');
+    const letterWrap = document.getElementById('letterWrap');
+    const paperLayer = document.getElementById('paperLayer');
+    const formOverlay= document.getElementById('formOverlay');
+    const finale     = document.getElementById('finale');
+    const clickHint  = document.getElementById('clickHint');
+
+    const canvasBack = document.getElementById('petals');
+    const canvasFront= document.getElementById('petalsFront');
+
+    // Debug HUD (コンソールを開かなくても状態が分かる)
+    const DEBUG = false; // ← true/falseでON/OFF
+    const debugHud = document.getElementById('debugHud');
+    const debugLog = [];
+    function hud(msg){
+      if(!DEBUG || !debugHud) return;
+      const ts = new Date().toLocaleTimeString();
+      debugLog.push(`[${ts}] ${msg}`);
+      // 最新10行だけ表示
+      if(debugLog.length > 10) debugLog.shift();
+      debugHud.style.display = 'block';
+      debugHud.textContent = debugLog.join('\n');
+    }
+
+    function hideAll(){
+      stage.style.display = 'none';
+      letterWrap.style.display = 'none';
+      paperLayer.style.display = 'none';
+      formOverlay.style.display = 'none';
+      finale.style.display = 'none';
+
+      canvasBack.style.display = 'none';
+      canvasFront.style.display = 'none';
+      if(clickHint) clickHint.classList.remove('show');
+    }
+
+    function showIntro(){
+      hideAll();
+      canvasBack.style.display = 'block';
+      stage.style.display = 'grid';
+      hud('showIntro');
+    }
+    function showEnvelope(){
+      hideAll();
+      canvasBack.style.display = 'block';
+      letterWrap.style.display = 'block';
+      if(clickHint) clickHint.classList.add('show');
+      positionClickHint();
+      hud('showEnvelope');
+    }
+    function showPaper(){
+      hideAll();
+      canvasBack.style.display = 'block';
+      paperLayer.style.display = 'block';
+      hud('showPaper');
+    }
+    function showForm(){
+      hideAll();
+      canvasBack.style.display = 'block';
+      formOverlay.style.display = 'grid';
+      hud('showForm');
+    }
+    function showFinale(){
+      hideAll();
+
+      // 背面の花びらは継続
+      canvasBack.style.display = 'block';
+
+      // 祝福の瞬間だけ最前面の花吹雪を重ねる
+      canvasFront.style.display = 'block';
+
+      // メッセージ表示
+      finale.style.display = 'grid';
+      hud('showFinale');
+    }
+
+    /***********************
+     * 背面：通常の花びら（軽量）
+     ***********************/
+    const ctx = canvasBack.getContext('2d');
+    let W=0, H=0, DPR=Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    function resizeBack(){
+      W = Math.floor(window.innerWidth);
+      H = Math.floor(window.innerHeight);
+      canvasBack.width  = Math.floor(W * DPR);
+      canvasBack.height = Math.floor(H * DPR);
+      canvasBack.style.width = W + 'px';
+      canvasBack.style.height = H + 'px';
+      ctx.setTransform(DPR,0,0,DPR,0,0);
+    }
+    window.addEventListener('resize', resizeBack);
+    window.addEventListener('resize', () => {
+      if(step === 1) positionClickHint();
+    });
+    resizeBack();
+
+    function rand(min,max){ return Math.random()*(max-min)+min; }
+
+    const BASE_COUNT = Math.min(90, Math.max(45, Math.floor(W / 18)));
+    const petals = [];
+    function makePetal(){
+      const size = rand(6, 14);
+      return {
+        x: rand(-W*0.1, W*1.1),
+        y: rand(-H, H),
+        vx: rand(-0.25, 1.0),
+        vy: rand(0.9, 2.0),
+        rot: rand(0, Math.PI*2),
+        vr: rand(-0.03, 0.03),
+        size,
+        wob: rand(0, Math.PI*2),
+        wobSpd: rand(0.01, 0.035),
+        alpha: rand(0.35, 0.85),
+        hue: rand(342, 356),
+        sat: rand(55, 78),
+        light: rand(72, 84),
+        edge: rand(55, 68),
+      };
+    }
+    for(let i=0;i<BASE_COUNT;i++) petals.push(makePetal());
+
+    function drawPetal(p){
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+
+      // Reference-like sakura petal: slim heart/teardrop with shallow notch
+      const w = p.size * 1.15;
+      const h = p.size * 2.05;
+
+      const topY = -h;
+      const notchY = -h * 0.78;
+      const tipY = h;
+
+      const notchW = w * 0.22;     // notch half width
+      const humpY  = topY + h*0.12;
+      const shoulderY = -h * 0.55;
+      const shoulderX = w * 0.66;
+
+      // Soft sakura gradient
+      const grad = ctx.createLinearGradient(0, topY, 0, tipY);
+      grad.addColorStop(0,   `hsla(${p.hue}, ${p.sat}%, ${Math.min(95, p.light+10)}%, ${p.alpha})`);
+      grad.addColorStop(0.55,`hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${p.alpha})`);
+      grad.addColorStop(1,   `hsla(${p.hue-6}, ${Math.max(35, p.sat-18)}%, ${Math.max(60, p.edge)}%, ${p.alpha})`);
+
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+
+      // Start at the notch valley
+      ctx.moveTo(0, notchY);
+
+      // Up to right hump (creates the split)
+      ctx.bezierCurveTo(
+        notchW * 0.55, notchY - h*0.10,
+        notchW * 1.00, topY + h*0.02,
+        notchW * 1.10, humpY
+      );
+
+      // Out to right shoulder
+      ctx.bezierCurveTo(
+        w * 0.60, humpY + h*0.10,
+        shoulderX * 1.05, shoulderY + h*0.02,
+        shoulderX, shoulderY
+      );
+
+      // Down to sharp-ish tip (teardrop)
+      ctx.bezierCurveTo(
+        w * 1.10, -h*0.05,
+        w * 0.80,  h*0.55,
+        0, tipY
+      );
+
+      // Mirror up left side
+      ctx.bezierCurveTo(
+        -w * 0.80,  h*0.55,
+        -w * 1.10, -h*0.05,
+        -shoulderX, shoulderY
+      );
+
+      // In to left hump
+      ctx.bezierCurveTo(
+        -shoulderX * 1.05, shoulderY + h*0.02,
+        -w * 0.60, humpY + h*0.10,
+        -notchW * 1.10, humpY
+      );
+
+      // Back to notch valley
+      ctx.bezierCurveTo(
+        -notchW * 1.00, topY + h*0.02,
+        -notchW * 0.55, notchY - h*0.10,
+        0, notchY
+      );
+
+      ctx.closePath();
+      ctx.fill();
+
+      // Subtle edge highlight
+      ctx.globalAlpha = p.alpha * 0.16;
+      ctx.strokeStyle = `rgba(255,255,255,.60)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Tiny highlight near upper area (keeps it "petal" not "leaf")
+      ctx.globalAlpha = p.alpha * 0.08;
+      ctx.fillStyle = `rgba(255,255,255,.65)`;
+      ctx.beginPath();
+      ctx.ellipse(w*0.10, topY + h*0.30, w*0.20, h*0.10, -0.6, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    let petalsBoostUntil = 0;
+    const ENABLE_PETAL_BOOST = false; // ← ブーストOFF
+    function boostPetals(ms=1200){
+      if(!ENABLE_PETAL_BOOST) return; // ← OFF
+      petalsBoostUntil = performance.now() + ms;
+    }
+
+    function tickBack(t){
+      if(canvasBack.style.display !== 'block'){
+        requestAnimationFrame(tickBack);
+        return;
+      }
+      ctx.clearRect(0,0,W,H);
+      const wind = Math.sin(t * 0.0004) * 0.6;
+
+      for(const p of petals){
+        p.wob += p.wobSpd;
+        const wobX = Math.sin(p.wob) * 0.9;
+        const boost = (t < petalsBoostUntil) ? 1.9 : 1.0;
+
+        p.x += (p.vx + wind + wobX) * boost;
+        p.y += p.vy * boost;
+        p.rot += p.vr * boost;
+
+        if(p.y > H + 40 || p.x < -80 || p.x > W + 80){
+          p.x = rand(-W*0.1, W*1.1);
+          p.y = rand(-140, -20);
+          p.vx = rand(-0.25, 1.0);
+          p.vy = rand(0.9, 2.2);
+          p.alpha = rand(0.35, 0.85);
+          p.size = rand(6, 14);
+        }
+        drawPetal(p);
+      }
+      requestAnimationFrame(tickBack);
+    }
+    requestAnimationFrame(tickBack);
+
+    /***********************
+     * 最前面：超密度花吹雪（祝福の瞬間だけ）
+     ***********************/
+    const ctxF = canvasFront.getContext('2d');
+    let WF=0, HF=0, DPRF=Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+
+    function resizeFront(){
+      WF = Math.floor(window.innerWidth);
+      HF = Math.floor(window.innerHeight);
+      canvasFront.width  = Math.floor(WF * DPRF);
+      canvasFront.height = Math.floor(HF * DPRF);
+      canvasFront.style.width = WF + 'px';
+      canvasFront.style.height = HF + 'px';
+      ctxF.setTransform(DPRF,0,0,DPRF,0,0);
+    }
+    window.addEventListener('resize', resizeFront);
+    resizeFront();
+
+    const front = {
+      on:false,
+      particles:[],
+      spawn:0,
+      decay:0.93,
+      kill:0.993
+    };
+
+    function makePetalFront(){
+      const size = rand(5, 14);
+      return {
+        x: rand(-WF*0.1, WF*1.1),
+        y: rand(-HF*0.2, HF*1.05),
+        vx: rand(-2.8, 2.8),
+        vy: rand(2.2, 6.6),
+        rot: rand(0, Math.PI*2),
+        vr: rand(-0.12, 0.12),
+        size,
+        wob: rand(0, Math.PI*2),
+        wobSpd: rand(0.03, 0.09),
+        alpha: rand(0.35, 0.98),
+        hue: rand(342, 356),
+        sat: rand(55, 85),
+        light: rand(72, 88),
+        edge: rand(56, 70),
+        life: rand(0.75, 1.0)
+      };
+    }
+
+    function drawPetalFront(p){
+      ctxF.save();
+      ctxF.translate(p.x, p.y);
+      ctxF.rotate(p.rot);
+
+      const w = p.size * 1.15;
+      const h = p.size * 2.05;
+
+      const topY = -h;
+      const notchY = -h * 0.78;
+      const tipY = h;
+
+      const notchW = w * 0.22;
+      const humpY  = topY + h*0.12;
+      const shoulderY = -h * 0.55;
+      const shoulderX = w * 0.66;
+
+      const grad = ctxF.createLinearGradient(0, topY, 0, tipY);
+      grad.addColorStop(0,   `hsla(${p.hue}, ${p.sat}%, ${Math.min(95, p.light+10)}%, ${p.alpha*p.life})`);
+      grad.addColorStop(0.55,`hsla(${p.hue}, ${p.sat}%, ${p.light}%, ${p.alpha*p.life})`);
+      grad.addColorStop(1,   `hsla(${p.hue-6}, ${Math.max(35, p.sat-18)}%, ${Math.max(60, p.edge)}%, ${p.alpha*p.life})`);
+
+      ctxF.fillStyle = grad;
+      ctxF.beginPath();
+
+      ctxF.moveTo(0, notchY);
+      ctxF.bezierCurveTo(
+        notchW * 0.55, notchY - h*0.10,
+        notchW * 1.00, topY + h*0.02,
+        notchW * 1.10, humpY
+      );
+      ctxF.bezierCurveTo(
+        w * 0.60, humpY + h*0.10,
+        shoulderX * 1.05, shoulderY + h*0.02,
+        shoulderX, shoulderY
+      );
+      ctxF.bezierCurveTo(
+        w * 1.10, -h*0.05,
+        w * 0.80,  h*0.55,
+        0, tipY
+      );
+      ctxF.bezierCurveTo(
+        -w * 0.80,  h*0.55,
+        -w * 1.10, -h*0.05,
+        -shoulderX, shoulderY
+      );
+      ctxF.bezierCurveTo(
+        -shoulderX * 1.05, shoulderY + h*0.02,
+        -w * 0.60, humpY + h*0.10,
+        -notchW * 1.10, humpY
+      );
+      ctxF.bezierCurveTo(
+        -notchW * 1.00, topY + h*0.02,
+        -notchW * 0.55, notchY - h*0.10,
+        0, notchY
+      );
+
+      ctxF.closePath();
+      ctxF.fill();
+
+      ctxF.globalAlpha = p.alpha * p.life * 0.20;
+      ctxF.strokeStyle = `rgba(255,255,255,.65)`;
+      ctxF.lineWidth = 1;
+      ctxF.stroke();
+
+      ctxF.restore();
+    }
+
+    function tickFront(){
+      if(canvasFront.style.display !== 'block'){
+        requestAnimationFrame(tickFront);
+        return;
+      }
+      ctxF.clearRect(0,0,WF,HF);
+
+      if(!front.on){
+        requestAnimationFrame(tickFront);
+        return;
+      }
+
+      // 最前面花吹雪の上限（軽量化済み）
+      // 'light' 時に過剰に増えないよう、MAX と 追加数を控えめに
+      const MAX = 4000;
+      const add = Math.min(Math.floor(front.spawn), 180);
+
+      for(let i=0;i<add && front.particles.length < MAX;i++){
+        front.particles.push(makePetalFront());
+      }
+
+      const wind = Math.sin(performance.now() * 0.0011) * 1.6;
+      for(const p of front.particles){
+        p.wob += p.wobSpd;
+        const wobX = Math.sin(p.wob) * 1.5;
+
+        p.x += p.vx + wind + wobX;
+        p.y += p.vy;
+        p.rot += p.vr;
+
+        p.life *= front.kill;
+        drawPetalFront(p);
+      }
+
+      front.particles = front.particles.filter(p =>
+        p.life > 0.08 && p.y < HF + 80 && p.x > -120 && p.x < WF + 120
+      );
+
+      front.spawn *= front.decay;
+
+      // 減って収束したら止める（最前面キャンバスも消す）
+      if(front.spawn < 1 && front.particles.length < 120){
+        front.on = false;
+        front.particles.length = 0;
+        canvasFront.style.display = 'none';
+      }
+
+      requestAnimationFrame(tickFront);
+    }
+    requestAnimationFrame(tickFront);
+
+    // 花吹雪の量設定: 'off' | 'light' | 'full'
+    // 完成後に好みで 'off' にすると完全に停止できます
+    const CONFETTI_MODE = 'light';
+
+    function megaStorm(){
+      // 端末が「視覚効果を減らす」設定なら自動でOFF
+      const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if(reduceMotion || CONFETTI_MODE === 'off'){
+        front.on = false;
+        front.particles.length = 0;
+        canvasFront.style.display = 'none';
+        return;
+      }
+
+      canvasFront.style.display = 'block';
+      front.on = true;
+
+      // 軽量デフォルト（スマホでも落ちにくい量）
+      const isMobile = Math.min(window.innerWidth, window.innerHeight) < 520;
+
+      if(CONFETTI_MODE === 'full'){
+        // 旧挙動に近い（重いので基本非推奨）
+        front.spawn = 2200;
+        front.decay = 0.93;
+        front.kill  = 0.993;
+      }else{
+        // 'light'：少量。モバイルはさらに控えめ
+        front.spawn = isMobile ? 20 : 40;
+        front.decay = 0.90;
+        front.kill  = 0.992;
+      }
+    }
+
+    /***********************
+     * UI遷移
+     ***********************/
+    const envelope   = document.getElementById('envelope');
+    const mouth      = document.getElementById('mouth');
+
+    const paper      = document.getElementById('paper');
+    const paperInner = document.getElementById('paperInner');
+    const toForm     = document.getElementById('toForm');
+    const toFormBtn  = document.getElementById('toFormBtn');
+    const sentinel   = document.getElementById('sentinel');
+
+    const closeForm  = document.getElementById('closeForm');
+    const manualNext = document.getElementById('manualNext');
+    const formHintEl = document.querySelector('#formOverlay .formTop .t span');
+    const FORM_HINT_DEFAULT = '送信後、自動で次のステップに進みます。';
+    const FORM_HINT_SUBMITTED = '送信を確認しました。まもなく自動で進みます（今すぐ進む場合は右上の「次へ」）。';
+    let submitDetected = false;
+
+    const finaleText = document.getElementById('finaleText');
+
+    let step = 0;
+
+    // 封筒を開いた後、少し待って自動で手紙を開く（フェーズ5を省略）
+    const AUTO_OPEN_PAPER_DELAY_MS = 650;
+
+    function rectOf(el){
+      const r = el.getBoundingClientRect();
+      return { x:r.left, y:r.top, w:r.width, h:r.height };
+    }
+    function applyRect(el, r){
+      el.style.left = r.x + 'px';
+      el.style.top  = r.y + 'px';
+      el.style.width  = r.w + 'px';
+      el.style.height = r.h + 'px';
+    }
+
+    function positionClickHint(){
+      if(!clickHint || !envelope) return;
+      const r = envelope.getBoundingClientRect();
+      // 封筒がfloatInで上がってくる間に位置が下に寄りがちなので、少し上に補正
+      const CLICK_HINT_OFFSET_Y = -80; // さらに上げたい場合は -100 / -120 など
+      const y = (r.bottom + window.innerHeight) / 2 + CLICK_HINT_OFFSET_Y;
+      clickHint.style.top = Math.round(y) + 'px';
+    }
+
+    function openEnvelope(){
+      if(clickHint) clickHint.classList.remove('show');
+      if(step >= 2) return;
+      step = 2;
+      envelope.classList.add('open');
+      boostPetals(900);
+
+      // 自動で手紙を開く（封筒が開くアニメーション後）
+      setTimeout(() => {
+        if(step !== 2) return;
+        showPaperAndFull();
+      }, AUTO_OPEN_PAPER_DELAY_MS);
+    }
+
+    function showPaperAndFull(){
+      if(step >= 3) return;
+      step = 3;
+
+      // 封筒は背後に残したまま、紙レイヤーを重ねる（紙が全面に展開したら封筒を消す）
+      // ※ hideAll() は呼ばず、必要な層だけONにする
+      stage.style.display = 'none';
+      formOverlay.style.display = 'none';
+      finale.style.display = 'none';
+      canvasBack.style.display = 'block';
+      letterWrap.style.display = 'block';
+      paperLayer.style.display = 'block';
+
+      boostPetals(1100);
+
+      const mouthR = rectOf(mouth);
+
+      const startR = {
+        x: mouthR.x,
+        y: mouthR.y,
+        w: mouthR.w,
+        h: Math.max(18, mouthR.h)
+      };
+
+      paper.style.opacity = '1';
+      paper.classList.remove('full','revealed');
+      applyRect(paper, startR);
+
+      const midR = {
+        x: mouthR.x,
+        y: mouthR.y - 6,
+        w: mouthR.w,
+        h: 280
+      };
+
+      paper.animate([
+        { left: startR.x+'px', top:startR.y+'px', width:startR.w+'px', height:startR.h+'px', borderRadius:'12px' },
+        { left: midR.x+'px',   top:midR.y+'px',   width:midR.w+'px',   height:midR.h+'px',   borderRadius:'12px' }
+      ], { duration: 520, easing:'cubic-bezier(.2,.85,.15,1.05)', fill:'forwards' }).onfinish = () => {
+
+        const pad = 14; // 画面端との余白（上下左右）
+        const w = Math.min(860, window.innerWidth - pad * 2);
+        const h = Math.min(980, window.innerHeight - pad * 2); // ← 縦を少し大きめに
+
+        const endR = {
+          x: Math.round((window.innerWidth  - w) / 2),
+          y: Math.round((window.innerHeight - h) / 2), // ← 上下の余白が同じになる
+          w,
+          h
+        };
+
+        paper.classList.add('full');
+
+        paper.animate([
+          { left: midR.x+'px', top:midR.y+'px', width:midR.w+'px', height:midR.h+'px', borderRadius:'12px' },
+          { left: endR.x+'px', top:endR.y+'px', width:endR.w+'px', height:endR.h+'px', borderRadius:'18px' }
+        ], { duration: 760, easing:'cubic-bezier(.16,.84,.18,1)', fill:'forwards' }).onfinish = () => {
+          applyRect(paper, endR);
+          paper.classList.add('revealed');
+          paperInner.scrollTop = 0;
+
+          // 紙が全面に展開して封筒が隠れたタイミングで封筒を非表示にする
+          letterWrap.style.display = 'none';
+          letterWrap.setAttribute('aria-hidden', 'true');
+        };
+      };
+    }
+
+    // スクロール最下部でボタン
+    const obs = new IntersectionObserver((entries) => {
+      for(const e of entries){
+        if(e.isIntersecting){
+          toForm.classList.add('show');
+        }
+      }
+    }, { root: paperInner, threshold: 1.0 });
+    obs.observe(sentinel);
+
+    const formFrame  = document.querySelector('#formOverlay iframe');
+    let formLoadCount = 0;
+    let watchingSubmit = false;
+    // フォールバック：Google Form が送信後に iframe の load を発火しない環境向け
+    // 一定時間操作が続いていれば「次へ」を表示して詰まりを防ぐ
+    const FALLBACK_NEXT_AFTER_MS = 6000; // 6秒（必要なら調整）
+    let fallbackNextTimer = null;
+
+    // iframe 内クリックは親に pointerdown が来ないことが多いので、focus で操作検知する
+    let focusWatchTimer = null;
+
+    function startFocusWatch(){
+      if(focusWatchTimer) clearInterval(focusWatchTimer);
+      focusWatchTimer = setInterval(() => {
+        if(step !== 4) return;
+        // クリックして iframe がフォーカスを取ったら「操作した」扱い
+        if(document.activeElement === formFrame){
+          touchedForm = true;
+        }
+      }, 250);
+    }
+
+    function stopFocusWatch(){
+      if(!focusWatchTimer) return;
+      clearInterval(focusWatchTimer);
+      focusWatchTimer = null;
+    }
+
+    // 安全策（誤検知を減らす）
+    // 送信直後の遷移は iframe の再load で検知するが、
+    //   - フォーム表示直後の再読み込み
+    //   - 未操作のままの再読み込み
+    // を誤検知として弾く
+    const SUBMIT_MIN_WAIT_MS = 6000;
+    let formOpenedAt = 0;
+    let touchedForm = false;
+    // 「次へ」ボタンの出し方
+    // - 'rescue'      : 理想A。自動遷移が起きなかった場合にだけ表示
+    // - 'afterSubmit' : 最悪B。送信検知後に表示（早送り用）
+    const NEXT_BUTTON_MODE = 'afterSubmit';
+
+    const SUBMIT_TO_FINALE_DELAY_MS =
+      (NEXT_BUTTON_MODE === 'afterSubmit') ? 1800 : 650;
+
+    // rescue のときは「自動遷移するはずの時間を過ぎてもフォームに残ってたら出す」
+    // afterSubmit のときはすぐ出す
+    const MANUAL_NEXT_SHOW_DELAY_MS = (NEXT_BUTTON_MODE === 'afterSubmit') ? 180 : (SUBMIT_TO_FINALE_DELAY_MS + 700);
+    function openForm(){
+      step = 4;
+      showForm();
+      boostPetals(1400);
+
+      // フォーム表示のたびに監視をリセット
+      formLoadCount = 0;
+      watchingSubmit = true;
+      formOpenedAt = performance.now();
+      touchedForm = false;
+      submitDetected = false;
+      formOverlay.classList.remove('submitted');
+      if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
+      if(manualNext){
+        manualNext.style.display = 'none';
+        manualNext.disabled = true;
+      }
+      startFocusWatch();
+
+      // フォールバックタイマーを張り直す
+      if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
+      fallbackNextTimer = setTimeout(() => {
+        if(step !== 4) return;
+
+        // 触っていないのに出るのは避ける（誤誘導防止）
+        if(!touchedForm) return;
+
+        // 注意: 未送信でフローを抜けられないよう、ここでは submitDetected を立てない
+        // 送信済みでも自動遷移しない場合の“案内”だけ出す
+        if(formHintEl) formHintEl.textContent = '送信後に自動で進みます。進まない場合は少し待ってください（送信前は「次へ」は使えません）。';
+
+        if(manualNext){
+          manualNext.style.display = '';
+          manualNext.disabled = true;
+        }
+        hud('fallback: show disabled manualNext (no submit detected)');
+      }, FALLBACK_NEXT_AFTER_MS);
+
+      hud(`openForm: step=${step}, watchingSubmit=${watchingSubmit}`);
+    }
+
+    function closeFormOverlay(){
+      // 「閉じる」で紙に戻す（最前面は紙のみ）
+      touchedForm = false;
+      formOpenedAt = 0;
+      watchingSubmit = false;
+      step = 3;
+      showPaper();
+      submitDetected = false;
+      formOverlay.classList.remove('submitted');
+      if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
+      if(manualNext) manualNext.style.display = 'none';
+      if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
+      fallbackNextTimer = null;
+      stopFocusWatch();
+    }
+
+    function startFinale(){
+      stopFocusWatch();
+      step = 5;
+
+      // 最前面は finale と petalsFront のみ
+      showFinale();
+
+      // 祝福の瞬間だけ前面爆量
+      megaStorm();
+
+      setTimeout(() => {
+        finaleText.classList.add('show');
+      }, 700);
+    }
+
+    // Google Form は送信後に確認画面へ遷移し、iframe が再度 load される
+    // 1回目: 初期表示 / 2回目: 送信後遷移（扱い）
+    formFrame.addEventListener('load', () => {
+      if(!watchingSubmit) return;
+      if(step !== 4) return;
+
+      formLoadCount += 1;
+      hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(performance.now()-formOpenedAt)}ms, touched=${touchedForm})`);
+
+      if(formLoadCount >= 2){
+        // 安全策: すぐの再読み込み・未操作のままの遷移では進まない
+        const elapsed = performance.now() - formOpenedAt;
+        if(elapsed < SUBMIT_MIN_WAIT_MS) return;
+        // ほとんどの環境では上の pointerdown で touchedForm が true になる。
+        // それでも取れない端末向けに、一定時間経過後は通す（誤検知は時間ガードで抑える）。
+        if(!touchedForm && elapsed < 15000) return;
+
+        submitDetected = true;
+        if(manualNext) manualNext.disabled = false;
+        if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
+        fallbackNextTimer = null;
+        formOverlay.classList.add('submitted');
+        if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
+
+        hud('submit detected -> scheduling finale');
+        watchingSubmit = false;
+
+        // 自動遷移（通常はこちらで進む）
+        setTimeout(() => {
+          if(step !== 4) return;
+          startFinale();
+        }, SUBMIT_TO_FINALE_DELAY_MS);
+
+        // 「次へ」表示（A:失敗時のみ / B:送信後に表示）
+        setTimeout(() => {
+          if(step !== 4) return;
+          if(!submitDetected) return;
+
+          // A(rescue): この時点でもフォームに残ってる＝自動遷移できてない想定 → 出す
+          // B(afterSubmit): 送信後すぐ出す
+          if(manualNext) manualNext.style.display = '';
+        }, MANUAL_NEXT_SHOW_DELAY_MS);
+      }
+    });
+
+    // タップで進む（フォーム上は無視）
+    window.addEventListener('pointerdown', (e) => {
+      const inForm = e.target.closest && e.target.closest('#formOverlay');
+      if(inForm) return;
+
+      // Intro だけは「どこでもタップで開始」OK
+      if(step === 0){
+        step = 1;
+        showEnvelope();
+        boostPetals(1200);
+        return; // 1回目のタップでは封筒を開かない
+      }
+      if(step === 1){
+        openEnvelope();
+        return;
+      }
+      // step===2 では自動で手紙が開くので、ここでは何もしない
+    }, { passive:true });
+
+    envelope.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if(step === 1) openEnvelope();
+      // step===2 では自動で手紙が開く
+    });
+
+    toFormBtn.addEventListener('click', openForm);
+    closeForm.addEventListener('click', closeFormOverlay);
+    manualNext.addEventListener('click', () => {
+      if(step !== 4) return;
+      // 未送信でフローを抜けられないようガード
+      if(!submitDetected){
+        hud('manualNext blocked: submit not detected');
+        return;
+      }
+      watchingSubmit = false;
+      startFinale();
+    });
+    // フォーム領域に触れたら「操作した」扱いにする
+    formOverlay.addEventListener('pointerdown', (e) => {
+      if(step !== 4) return;
+      // ヘッダー（閉じるボタンなど）を除外。フォーム本体を触った時だけ
+      const inTop = e.target.closest && e.target.closest('.formTop');
+      if(inTop) return;
+      touchedForm = true;
+    }, { passive:true });
+    // ※ iframe 内のイベントは親にバブルしないので、iframe要素自体のタップも拾う
+    formFrame.addEventListener('pointerdown', () => {
+      if(step !== 4) return;
+      touchedForm = true;
+    }, { passive:true });
+
+    // グローバルエラーをHUDに表示
+    window.addEventListener('error', (e) => {
+      hud(`ERROR: ${e.message}`);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      hud(`PROMISE: ${e.reason && e.reason.message ? e.reason.message : String(e.reason)}`);
+    });
+
+    // 初期表示
+    showIntro();
+  </script>
+</body>
+</html>
