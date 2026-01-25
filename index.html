@@ -581,6 +581,9 @@
       <h1>合格おめでとう！！</h1>
       <p>神山での毎日が、あなたにとって素敵な日々になりますように！</p>
       <div class="hint">これでフォームはおわりです。回答ありがとうございました。</div>
+      <span class="vspace" aria-hidden="true"></span>
+      <div class="hint">もし、回答が終わっていない段階でこのページに来てしまった場合、下記のGoogleForm本体よりご回答ください。</div>
+      <div class="hint">https://docs.google.com/forms/d/e/1FAIpQLScDh-0RFpnU0_T03JqakGaweGsXMrq4-tslGCMjE6ftcunCqQ/viewform?usp=dialog</div>
     </div>
   </div>
 
@@ -1188,14 +1191,25 @@
     // Google Form のページ移動でも iframe は load する。
     // 本当に「送信完了（確認画面）」に到達したときだけ次へ進む。
     // 埋め込みの場合、送信後は URL に `formResponse` が含まれることが多い。
-    function isSubmitCompletionURL(url){
+    function getFrameURLSafe(){
+      // cross-originでも src プロパティは読める（ブラウザによっては現在URLを返す）
+      try{ return String(formFrame && formFrame.src ? formFrame.src : ''); }
+      catch(_){ return ''; }
+    }
+
+    function isFormResponseURL(url){
       try{
         const s = String(url || '');
-        return /\/formResponse\b/i.test(s) || /formResponse\?/i.test(s);
+        return /\/formResponse\b/i.test(s);
       }catch(_){
         return false;
       }
     }
+
+    // セクション移動で一瞬 formResponse が挟まるケースを弾くための「確定待ち」
+    const SUBMIT_CONFIRM_STAY_MS = 2200;
+    let pendingSubmitTimer = null;
+    let pendingSubmitSeen = false;
     // フォールバック：Google Form が送信後に iframe の load を発火しない環境向け
     // 一定時間操作が続いていれば「次へ」を表示して詰まりを防ぐ
     const FALLBACK_NEXT_AFTER_MS = 6000; // 6秒（必要なら調整）
@@ -1294,6 +1308,9 @@
       if(manualNext) manualNext.style.display = 'none';
       if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
       fallbackNextTimer = null;
+      if(pendingSubmitTimer) clearTimeout(pendingSubmitTimer);
+      pendingSubmitTimer = null;
+      pendingSubmitSeen = false;
       stopFocusWatch();
     }
 
@@ -1318,48 +1335,74 @@
       if(!watchingSubmit) return;
       if(step !== 4) return;
 
-      const currentURL = formFrame && formFrame.src ? formFrame.src : '';
+      const currentURL = getFrameURLSafe();
       const elapsed = performance.now() - formOpenedAt;
 
-      // load は「ページ移動」でも起きるので、まずURLをログ
       formLoadCount += 1;
       hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(elapsed)}ms, touched=${touchedForm}) url=${currentURL}`);
 
-      // 送信完了URLでなければ、単なるページ移動とみなして何もしない
-      if(!isSubmitCompletionURL(currentURL)){
+      // もし「確定待ち」中に viewform 等へ戻ったら、これはセクション移動なのでキャンセル
+      if(pendingSubmitSeen && !isFormResponseURL(currentURL)){
+        pendingSubmitSeen = false;
+        if(pendingSubmitTimer) clearTimeout(pendingSubmitTimer);
+        pendingSubmitTimer = null;
+        hud('pending submit canceled (navigated away from formResponse)');
         return;
       }
 
-      // ここから先は「送信完了（確認画面）」とみなす
+      // formResponse を見つけたら、すぐ送信扱いにせず「そのまま滞在したら送信」と確定する
+      if(isFormResponseURL(currentURL)){
+        pendingSubmitSeen = true;
 
-      // 安全策: すぐの再読み込み・未操作のままの遷移では進まない
-      if(elapsed < SUBMIT_MIN_WAIT_MS) return;
-      // ほとんどの環境では上の pointerdown/focus watch で touchedForm が true になる。
-      // それでも取れない端末向けに、一定時間経過後は通す（誤検知は時間ガードで抑える）。
-      if(!touchedForm && elapsed < 15000) return;
+        if(pendingSubmitTimer) clearTimeout(pendingSubmitTimer);
+        pendingSubmitTimer = setTimeout(() => {
+          if(step !== 4) return;
+          if(!watchingSubmit) return;
 
-      submitDetected = true;
-      if(manualNext) manualNext.disabled = false;
-      if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
-      fallbackNextTimer = null;
-      formOverlay.classList.add('submitted');
-      if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
+          const urlNow = getFrameURLSafe();
+          const elapsedNow = performance.now() - formOpenedAt;
 
-      hud('submit detected (by URL) -> scheduling finale');
-      watchingSubmit = false;
+          // まだ formResponse にいる＝送信完了画面に滞在している可能性が高いので送信扱い
+          if(!isFormResponseURL(urlNow)){
+            pendingSubmitSeen = false;
+            hud('pending submit timer fired but URL is not formResponse -> ignore');
+            return;
+          }
 
-      // 自動遷移（通常はこちらで進む）
-      setTimeout(() => {
-        if(step !== 4) return;
-        startFinale();
-      }, SUBMIT_TO_FINALE_DELAY_MS);
+          // 安全策: すぐの再読み込み・未操作のままの遷移では進まない
+          if(elapsedNow < SUBMIT_MIN_WAIT_MS) return;
+          if(!touchedForm && elapsedNow < 15000) return;
 
-      // 「次へ」表示（A:失敗時のみ / B:送信後に表示）
-      setTimeout(() => {
-        if(step !== 4) return;
-        if(!submitDetected) return;
-        if(manualNext) manualNext.style.display = '';
-      }, MANUAL_NEXT_SHOW_DELAY_MS);
+          submitDetected = true;
+          if(manualNext) manualNext.disabled = false;
+          if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
+          fallbackNextTimer = null;
+          formOverlay.classList.add('submitted');
+          if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
+
+          hud('submit detected (confirmed stay on formResponse) -> scheduling finale');
+          watchingSubmit = false;
+          pendingSubmitSeen = false;
+
+          setTimeout(() => {
+            if(step !== 4) return;
+            startFinale();
+          }, SUBMIT_TO_FINALE_DELAY_MS);
+
+          setTimeout(() => {
+            if(step !== 4) return;
+            if(!submitDetected) return;
+            if(manualNext) manualNext.style.display = '';
+          }, MANUAL_NEXT_SHOW_DELAY_MS);
+
+        }, SUBMIT_CONFIRM_STAY_MS);
+
+        hud('formResponse seen -> pending submit confirmation');
+        return;
+      }
+
+      // viewform など通常URLは何もしない
+      return;
     });
 
     // タップで進む（フォーム上は無視）
