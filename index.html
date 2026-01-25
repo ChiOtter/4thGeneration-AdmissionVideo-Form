@@ -1184,6 +1184,18 @@
     const formFrame  = document.querySelector('#formOverlay iframe');
     let formLoadCount = 0;
     let watchingSubmit = false;
+
+    // Google Form のページ移動でも iframe は load する。
+    // 本当に「送信完了（確認画面）」に到達したときだけ次へ進む。
+    // 埋め込みの場合、送信後は URL に `formResponse` が含まれることが多い。
+    function isSubmitCompletionURL(url){
+      try{
+        const s = String(url || '');
+        return /\/formResponse\b/i.test(s) || /formResponse\?/i.test(s);
+      }catch(_){
+        return false;
+      }
+    }
     // フォールバック：Google Form が送信後に iframe の load を発火しない環境向け
     // 一定時間操作が続いていれば「次へ」を表示して詰まりを防ぐ
     const FALLBACK_NEXT_AFTER_MS = 6000; // 6秒（必要なら調整）
@@ -1301,48 +1313,53 @@
     }
 
     // Google Form は送信後に確認画面へ遷移し、iframe が再度 load される
-    // 1回目: 初期表示 / 2回目: 送信後遷移（扱い）
+    // 1回目: 初期表示 / 2回目以降: ページ遷移や送信後
     formFrame.addEventListener('load', () => {
       if(!watchingSubmit) return;
       if(step !== 4) return;
 
+      const currentURL = formFrame && formFrame.src ? formFrame.src : '';
+      const elapsed = performance.now() - formOpenedAt;
+
+      // load は「ページ移動」でも起きるので、まずURLをログ
       formLoadCount += 1;
-      hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(performance.now()-formOpenedAt)}ms, touched=${touchedForm})`);
+      hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(elapsed)}ms, touched=${touchedForm}) url=${currentURL}`);
 
-      if(formLoadCount >= 2){
-        // 安全策: すぐの再読み込み・未操作のままの遷移では進まない
-        const elapsed = performance.now() - formOpenedAt;
-        if(elapsed < SUBMIT_MIN_WAIT_MS) return;
-        // ほとんどの環境では上の pointerdown で touchedForm が true になる。
-        // それでも取れない端末向けに、一定時間経過後は通す（誤検知は時間ガードで抑える）。
-        if(!touchedForm && elapsed < 15000) return;
-
-        submitDetected = true;
-        if(manualNext) manualNext.disabled = false;
-        if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
-        fallbackNextTimer = null;
-        formOverlay.classList.add('submitted');
-        if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
-
-        hud('submit detected -> scheduling finale');
-        watchingSubmit = false;
-
-        // 自動遷移（通常はこちらで進む）
-        setTimeout(() => {
-          if(step !== 4) return;
-          startFinale();
-        }, SUBMIT_TO_FINALE_DELAY_MS);
-
-        // 「次へ」表示（A:失敗時のみ / B:送信後に表示）
-        setTimeout(() => {
-          if(step !== 4) return;
-          if(!submitDetected) return;
-
-          // A(rescue): この時点でもフォームに残ってる＝自動遷移できてない想定 → 出す
-          // B(afterSubmit): 送信後すぐ出す
-          if(manualNext) manualNext.style.display = '';
-        }, MANUAL_NEXT_SHOW_DELAY_MS);
+      // 送信完了URLでなければ、単なるページ移動とみなして何もしない
+      if(!isSubmitCompletionURL(currentURL)){
+        return;
       }
+
+      // ここから先は「送信完了（確認画面）」とみなす
+
+      // 安全策: すぐの再読み込み・未操作のままの遷移では進まない
+      if(elapsed < SUBMIT_MIN_WAIT_MS) return;
+      // ほとんどの環境では上の pointerdown/focus watch で touchedForm が true になる。
+      // それでも取れない端末向けに、一定時間経過後は通す（誤検知は時間ガードで抑える）。
+      if(!touchedForm && elapsed < 15000) return;
+
+      submitDetected = true;
+      if(manualNext) manualNext.disabled = false;
+      if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
+      fallbackNextTimer = null;
+      formOverlay.classList.add('submitted');
+      if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
+
+      hud('submit detected (by URL) -> scheduling finale');
+      watchingSubmit = false;
+
+      // 自動遷移（通常はこちらで進む）
+      setTimeout(() => {
+        if(step !== 4) return;
+        startFinale();
+      }, SUBMIT_TO_FINALE_DELAY_MS);
+
+      // 「次へ」表示（A:失敗時のみ / B:送信後に表示）
+      setTimeout(() => {
+        if(step !== 4) return;
+        if(!submitDetected) return;
+        if(manualNext) manualNext.style.display = '';
+      }, MANUAL_NEXT_SHOW_DELAY_MS);
     });
 
     // タップで進む（フォーム上は無視）
