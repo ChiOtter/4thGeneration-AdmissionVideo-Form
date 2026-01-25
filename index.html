@@ -1267,10 +1267,13 @@
     }
 
     function showProofUI(){
-      if(sentCheckWrap) sentCheckWrap.style.display = '';
-      if(submitUrl) submitUrl.style.display = '';
-      if(proofNote) proofNote.style.display = '';
-      if(manualNext) manualNext.style.display = '';
+      // Explicit display values so we reliably override inline style="display:none;"
+      // and so the flex header layout stays stable.
+      if(sentCheckWrap) sentCheckWrap.style.display = 'inline-flex';
+      if(submitUrl) submitUrl.style.display = 'block';
+      if(proofNote) proofNote.style.display = 'inline';
+      if(manualNext) manualNext.style.display = 'inline-block';
+      hud('showProofUI');
     }
 
     function hideProofUI(){
@@ -1278,6 +1281,7 @@
       if(submitUrl) submitUrl.style.display = 'none';
       if(proofNote) proofNote.style.display = 'none';
       if(manualNext) manualNext.style.display = 'none';
+      hud('hideProofUI');
     }
 
     function updateManualNext(){
@@ -1321,14 +1325,20 @@
       if(sentCheck) sentCheck.checked = false;
       if(submitUrl) submitUrl.value = '';
       if(manualNext) manualNext.disabled = true;
+
       // フォーム画面では、最初から「送信した」UIを出しておく（迷子防止）
       showProofUI();
-      updateManualNext();
+
+      // display 切替直後はレイアウト反映前のことがあるので次フレームで判定
+      requestAnimationFrame(() => {
+        updateManualNext();
+      });
     }
 
     function openForm(){
       step = 4;
       showForm();
+      showProofUI();
       boostPetals(1400);
 
       resetManualProof();
@@ -1391,7 +1401,7 @@
       });
     }
 
-    manualNext.addEventListener('click', () => {
+    if(manualNext) manualNext.addEventListener('click', () => {
       if(step !== 4) return;
       updateManualNext();
       if(!submitDetected){
@@ -1401,8 +1411,8 @@
       startFinale();
     });
 
-    toFormBtn.addEventListener('click', openForm);
-    closeForm.addEventListener('click', closeFormOverlay);
+    if(toFormBtn) toFormBtn.addEventListener('click', openForm);
+    if(closeForm) closeForm.addEventListener('click', closeFormOverlay);
     // タップで進む（フォーム上は無視）
     window.addEventListener('pointerdown', (e) => {
       const inForm = e.target.closest && e.target.closest('#formOverlay');
