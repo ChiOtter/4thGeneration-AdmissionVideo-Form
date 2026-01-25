@@ -365,6 +365,27 @@
       color: rgba(31,41,51,.55);
       margin-left:6px;
     }
+    .proofInput{
+      width: min(360px, 40vw);
+      border: 1px solid rgba(31,41,51,.14);
+      background: rgba(255,255,255,.78);
+      color: rgba(31,41,51,.86);
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:12px;
+      outline:none;
+    }
+    .proofInput:focus{ border-color: rgba(31,41,51,.28); }
+    .proofNote{
+      font-size:11px;
+      color: rgba(31,41,51,.55);
+      line-height:1.35;
+      white-space:nowrap;
+    }
+    @media (max-width: 640px){
+      .proofInput{ width: 100%; }
+      .proofNote{ white-space:normal; }
+    }
     .ghost{
       border: 1px solid rgba(31,41,51,.14);
       background: rgba(255,255,255,.72);
@@ -566,7 +587,7 @@
         <div id="sentinel" style="height:1px;"></div>
         <div class="toForm" id="toForm">
           <button class="btn" id="toFormBtn" type="button">フォームへ進む</button>
-          <div class="tapAny">フォーム送信後、自動で次のステップに進みます。</div>
+          <div class="tapAny">フォーム送信後、右上の「送信した」にチェック＋URL貼り付けで「次へ」が出ます。</div>
         </div>
       </div>
     </div>
@@ -580,14 +601,29 @@
           <strong>フォーム記入</strong>
           <span>送信後、自動で次のステップに進みます。</span>
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
           <label class="sentCheck" id="sentCheckWrap" style="display:none;">
             <input type="checkbox" id="sentCheck" />
             <span>送信した</span>
             <span class="note">（送信後にチェック）</span>
           </label>
+
+          <input
+            id="submitUrl"
+            class="proofInput"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="送信後の画面URL（…/formResponse）を貼り付け"
+            style="display:none;" />
+
+          <span class="proofNote" id="proofNote" style="display:none;">
+            ※ 送信後の確認画面URLを貼ってください
+          </span>
+
           <button class="ghost" id="closeForm" type="button">閉じる</button>
-          <button class="ghost" id="manualNext" type="button" style="display:none;">次へ</button>
+          <button class="ghost" id="manualNext" type="button" style="display:none;" disabled>次へ</button>
         </div>
       </div>
       <div class="iframeWrap">
@@ -1083,8 +1119,10 @@
     const formHintEl = document.querySelector('#formOverlay .formTop .t span');
     const sentCheckWrap = document.getElementById('sentCheckWrap');
     const sentCheck = document.getElementById('sentCheck');
-    const FORM_HINT_DEFAULT = '送信後、自動で次のステップに進みます。';
-    const FORM_HINT_SUBMITTED = '送信を確認しました。まもなく自動で進みます（今すぐ進む場合は右上の「次へ」）。';
+    const submitUrl = document.getElementById('submitUrl');
+    const proofNote = document.getElementById('proofNote');
+    const FORM_HINT_DEFAULT = '送信後、右上の「送信した」にチェック → URL貼り付けで「次へ」が出ます。';
+    const FORM_HINT_SUBMITTED = '送信を確認しました。右上の「次へ」で完了画面へ進めます。';
     let submitDetected = false;
 
     const finaleText = document.getElementById('finaleText');
@@ -1207,20 +1245,10 @@
     obs.observe(sentinel);
 
     const formFrame  = document.querySelector('#formOverlay iframe');
-    let formLoadCount = 0;
-    let watchingSubmit = false;
+    let formLoadCount = 0; // debug only
+    let watchingSubmit = false; // kept for compatibility, but no auto-submit
 
-    // Google Form のページ移動でも iframe は load する。
-    // 本当に「送信完了（確認画面）」に到達したときだけ次へ進む。
-    // 埋め込みの場合、送信後は URL に `formResponse` が含まれることが多い。
-    function isSubmitCompletionURL(url){
-      try{
-        const s = String(url || '');
-        return /\/formResponse\b/i.test(s) || /formResponse\?/i.test(s);
-      }catch(_){
-        return false;
-      }
-    }
+    // (isSubmitCompletionURL removed)
     // フォールバック：Google Form が送信後に iframe の load を発火しない環境向け
     // 一定時間操作が続いていれば「次へ」を表示して詰まりを防ぐ
     const FALLBACK_NEXT_AFTER_MS = 6000; // 6秒（必要なら調整）
@@ -1272,7 +1300,7 @@
 
       // フォーム表示のたびに監視をリセット
       formLoadCount = 0;
-      watchingSubmit = true;
+      watchingSubmit = false;
       formOpenedAt = performance.now();
       touchedForm = false;
       submitDetected = false;
@@ -1284,7 +1312,16 @@
       }
       if(sentCheckWrap) sentCheckWrap.style.display = 'none';
       if(sentCheck) sentCheck.checked = false;
+      if(submitUrl){
+        submitUrl.value = '';
+        submitUrl.style.display = 'none';
+      }
+      if(proofNote){
+        proofNote.style.display = 'none';
+        proofNote.textContent = '※ 送信後の確認画面URLを貼ってください';
+      }
       startFocusWatch();
+      updateManualNext();
 
       // フォールバックタイマーを張り直す
       if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
@@ -1292,14 +1329,12 @@
         if(step !== 4) return;
         if(!touchedForm) return;
 
-        if(formHintEl) formHintEl.textContent = '送信が完了したら右上の「送信した」にチェックしてください（誤って次へに進むのを防ぐため）。';
+        if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
 
-        if(sentCheckWrap) sentCheckWrap.style.display = '';
-        if(manualNext){
-          manualNext.style.display = '';
-          manualNext.disabled = true;
-        }
-        hud('fallback: show sentCheck + disabled manualNext');
+        showProofUI();
+        if(manualNext) manualNext.disabled = true;
+        updateManualNext();
+        hud('fallback: show proof UI (checkbox + URL)');
       }, FALLBACK_NEXT_AFTER_MS);
 
       hud(`openForm: step=${step}, watchingSubmit=${watchingSubmit}`);
@@ -1315,9 +1350,20 @@
       submitDetected = false;
       formOverlay.classList.remove('submitted');
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
-      if(manualNext) manualNext.style.display = 'none';
+      if(manualNext){
+        manualNext.style.display = 'none';
+        manualNext.disabled = true;
+      }
       if(sentCheckWrap) sentCheckWrap.style.display = 'none';
       if(sentCheck) sentCheck.checked = false;
+      if(submitUrl){
+        submitUrl.value = '';
+        submitUrl.style.display = 'none';
+      }
+      if(proofNote){
+        proofNote.style.display = 'none';
+        proofNote.textContent = '※ 送信後の確認画面URLを貼ってください';
+      }
       if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
       fallbackNextTimer = null;
       stopFocusWatch();
@@ -1341,10 +1387,10 @@
     // NOTE:
     // Google Forms を iframe 埋め込みで使う場合、セクション移動（次へ/戻る）でも load が発生し、
     // 「送信完了」だけを100%確実に自動判定する手段がありません（クロスオリジンで中身/URLに触れないため）。
-    // 誤検知でフィナーレに飛ばないよう、送信完了は「送信したチェック」で手動確定します。
+    // 誤検知でフィナーレに飛ばないよう、このサイトでは自動送信検知をしません。
+    // 送信後に「送信した」チェック＋送信後URL（…/formResponse）貼り付けでのみ次へ進めます。
     formFrame.addEventListener('load', () => {
       if(step !== 4) return;
-      if(!watchingSubmit) return;
       formLoadCount += 1;
       const elapsed = performance.now() - formOpenedAt;
       hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(elapsed)}ms, touched=${touchedForm})`);
@@ -1378,29 +1424,77 @@
 
     toFormBtn.addEventListener('click', openForm);
     closeForm.addEventListener('click', closeFormOverlay);
+    function normalizeUrl(s){
+      return String(s || '').trim();
+    }
+
+    // 送信後の確認画面は多くのケースで `.../formResponse` になります
+    function looksLikeSubmitProof(url){
+      const u = normalizeUrl(url);
+      if(!u) return false;
+      const isGoogleForms = /https?:\/\/(docs\.google\.com\/forms|forms\.gle)\//i.test(u);
+      const hasFormResponse = /\/formResponse\b/i.test(u) || /formResponse\?/i.test(u);
+      return isGoogleForms && hasFormResponse;
+    }
+
+    function showProofUI(){
+      if(sentCheckWrap) sentCheckWrap.style.display = '';
+      if(submitUrl) submitUrl.style.display = '';
+      if(proofNote) proofNote.style.display = '';
+      if(manualNext) manualNext.style.display = '';
+    }
+
+    function updateManualNext(){
+      if(step !== 4) return;
+      const checked = !!(sentCheck && sentCheck.checked);
+      const okUrl = !!(submitUrl && looksLikeSubmitProof(submitUrl.value));
+      const ok = checked && okUrl;
+
+      submitDetected = ok;
+
+      if(manualNext){
+        manualNext.disabled = !ok;
+      }
+      if(formHintEl){
+        formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT;
+      }
+      if(proofNote){
+        if(!checked){
+          proofNote.textContent = '※ 送信が完了したら「送信した」にチェックしてください';
+        }else if(!(submitUrl && submitUrl.value)){
+          proofNote.textContent = '※ 送信後の確認画面URL（…/formResponse）を貼ってください';
+        }else if(!okUrl){
+          proofNote.textContent = '※ URLが確認画面ではないようです（…/formResponse を含むURLを貼ってください）';
+        }else{
+          proofNote.textContent = 'OK：送信確認できました。右の「次へ」で進めます';
+        }
+      }
+      hud(`proof: checked=${checked}, urlOk=${okUrl}`);
+    }
+
     manualNext.addEventListener('click', () => {
       if(step !== 4) return;
+      updateManualNext();
       if(!submitDetected){
-        hud('manualNext blocked: sentCheck not confirmed');
+        hud('manualNext blocked: proof not satisfied');
         return;
       }
-      watchingSubmit = false;
       startFinale();
     });
     if(sentCheck){
       sentCheck.addEventListener('change', () => {
         if(step !== 4) return;
-        const ok = !!sentCheck.checked;
-        submitDetected = ok;
-        if(manualNext) manualNext.disabled = !ok;
-        if(ok){
-          if(formHintEl) formHintEl.textContent = '送信を確認しました。右上の「次へ」で完了画面へ進めます。';
-          formOverlay.classList.add('submitted');
-        }else{
-          if(formHintEl) formHintEl.textContent = '送信が完了したら右上の「送信した」にチェックしてください。';
-          formOverlay.classList.remove('submitted');
-        }
-        hud(`sentCheck: ${ok ? 'checked' : 'unchecked'}`);
+        updateManualNext();
+      });
+    }
+    if(submitUrl){
+      submitUrl.addEventListener('input', () => {
+        if(step !== 4) return;
+        updateManualNext();
+      });
+      submitUrl.addEventListener('change', () => {
+        if(step !== 4) return;
+        updateManualNext();
       });
     }
     // フォーム領域に触れたら「操作した」扱いにする
@@ -1411,9 +1505,10 @@
       if(inTop) return;
       touchedForm = true;
       const elapsed = performance.now() - formOpenedAt;
-      if(elapsed > SUBMIT_MIN_WAIT_MS && sentCheckWrap){
-        sentCheckWrap.style.display = '';
-        if(manualNext) manualNext.style.display = '';
+      if(elapsed > SUBMIT_MIN_WAIT_MS){
+        showProofUI();
+        if(manualNext) manualNext.disabled = true;
+        updateManualNext();
       }
     }, { passive:true });
     // ※ iframe 内のイベントは親にバブルしないので、iframe要素自体のタップも拾う
@@ -1421,9 +1516,10 @@
       if(step !== 4) return;
       touchedForm = true;
       const elapsed = performance.now() - formOpenedAt;
-      if(elapsed > SUBMIT_MIN_WAIT_MS && sentCheckWrap){
-        sentCheckWrap.style.display = '';
-        if(manualNext) manualNext.style.display = '';
+      if(elapsed > SUBMIT_MIN_WAIT_MS){
+        showProofUI();
+        if(manualNext) manualNext.disabled = true;
+        updateManualNext();
       }
     }, { passive:true });
 
