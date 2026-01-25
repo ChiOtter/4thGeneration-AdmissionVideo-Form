@@ -347,6 +347,24 @@
     .formTop .t{ text-align:left; }
     .formTop .t strong{ display:block; font-size:14px; }
     .formTop .t span{ display:block; font-size:12px; color: rgba(31,41,51,.55); margin-top:2px; }
+    .sentCheck{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-size:12px;
+      color: rgba(31,41,51,.70);
+      user-select:none;
+      white-space:nowrap;
+    }
+    .sentCheck input{
+      width:14px;
+      height:14px;
+      accent-color: rgba(232,183,201,1);
+    }
+    .sentCheck .note{
+      color: rgba(31,41,51,.55);
+      margin-left:6px;
+    }
     .ghost{
       border: 1px solid rgba(31,41,51,.14);
       background: rgba(255,255,255,.72);
@@ -562,7 +580,12 @@
           <strong>フォーム記入</strong>
           <span>送信後、自動で次のステップに進みます。</span>
         </div>
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <label class="sentCheck" id="sentCheckWrap" style="display:none;">
+            <input type="checkbox" id="sentCheck" />
+            <span>送信した</span>
+            <span class="note">（送信後にチェック）</span>
+          </label>
           <button class="ghost" id="closeForm" type="button">閉じる</button>
           <button class="ghost" id="manualNext" type="button" style="display:none;">次へ</button>
         </div>
@@ -1058,10 +1081,11 @@
     const closeForm  = document.getElementById('closeForm');
     const manualNext = document.getElementById('manualNext');
     const formHintEl = document.querySelector('#formOverlay .formTop .t span');
+    const sentCheckWrap = document.getElementById('sentCheckWrap');
+    const sentCheck = document.getElementById('sentCheck');
     const FORM_HINT_DEFAULT = '送信後、自動で次のステップに進みます。';
     const FORM_HINT_SUBMITTED = '送信を確認しました。まもなく自動で進みます（今すぐ進む場合は右上の「次へ」）。';
     let submitDetected = false;
-    let submitIntent = false; // ← 本当の送信操作が起きた時だけ true
 
     const finaleText = document.getElementById('finaleText');
 
@@ -1252,32 +1276,30 @@
       formOpenedAt = performance.now();
       touchedForm = false;
       submitDetected = false;
-      submitIntent = false;
       formOverlay.classList.remove('submitted');
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(manualNext){
         manualNext.style.display = 'none';
         manualNext.disabled = true;
       }
+      if(sentCheckWrap) sentCheckWrap.style.display = 'none';
+      if(sentCheck) sentCheck.checked = false;
       startFocusWatch();
 
       // フォールバックタイマーを張り直す
       if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
       fallbackNextTimer = setTimeout(() => {
         if(step !== 4) return;
-
-        // 触っていないのに出るのは避ける（誤誘導防止）
         if(!touchedForm) return;
 
-        // 注意: 未送信でフローを抜けられないよう、ここでは submitDetected を立てない
-        // 送信済みでも自動遷移しない場合の“案内”だけ出す
-        if(formHintEl) formHintEl.textContent = '送信後に自動で進みます。進まない場合は少し待ってください（送信前は「次へ」は使えません）。';
+        if(formHintEl) formHintEl.textContent = '送信が完了したら右上の「送信した」にチェックしてください（誤って次へに進むのを防ぐため）。';
 
+        if(sentCheckWrap) sentCheckWrap.style.display = '';
         if(manualNext){
           manualNext.style.display = '';
           manualNext.disabled = true;
         }
-        hud('fallback: show disabled manualNext (no submit detected)');
+        hud('fallback: show sentCheck + disabled manualNext');
       }, FALLBACK_NEXT_AFTER_MS);
 
       hud(`openForm: step=${step}, watchingSubmit=${watchingSubmit}`);
@@ -1291,10 +1313,11 @@
       step = 3;
       showPaper();
       submitDetected = false;
-      submitIntent = false;
       formOverlay.classList.remove('submitted');
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(manualNext) manualNext.style.display = 'none';
+      if(sentCheckWrap) sentCheckWrap.style.display = 'none';
+      if(sentCheck) sentCheck.checked = false;
       if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
       fallbackNextTimer = null;
       stopFocusWatch();
@@ -1315,51 +1338,17 @@
       }, 700);
     }
 
-    // Google Form は送信後に確認画面へ遷移し、iframe が再度 load される
-    // 1回目: 初期表示 / 2回目以降: ページ遷移や送信後
+    // NOTE:
+    // Google Forms を iframe 埋め込みで使う場合、セクション移動（次へ/戻る）でも load が発生し、
+    // 「送信完了」だけを100%確実に自動判定する手段がありません（クロスオリジンで中身/URLに触れないため）。
+    // 誤検知でフィナーレに飛ばないよう、送信完了は「送信したチェック」で手動確定します。
     formFrame.addEventListener('load', () => {
-      if(!watchingSubmit) return;
       if(step !== 4) return;
-
-      const currentURL = formFrame && formFrame.src ? formFrame.src : '';
-      const elapsed = performance.now() - formOpenedAt;
-
-      // load は「ページ移動」でも起きるので、まずURLをログ
+      if(!watchingSubmit) return;
       formLoadCount += 1;
-      hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(elapsed)}ms, touched=${touchedForm}) url=${currentURL}`);
-
-      // 送信完了URLでなければ、単なるページ移動とみなして何もしない
-      if(!isSubmitCompletionURL(currentURL)){
-        return;
-      }
-
-      // ここから先は「送信完了（確認画面）」とみなす
-
-      // submitIntent が立っていなければ進まない
-      if(!submitIntent) return;
-
-      submitDetected = true;
-      if(manualNext) manualNext.disabled = false;
-      if(fallbackNextTimer) clearTimeout(fallbackNextTimer);
-      fallbackNextTimer = null;
-      formOverlay.classList.add('submitted');
-      if(formHintEl) formHintEl.textContent = FORM_HINT_SUBMITTED;
-
-      hud('submit detected (by URL) -> scheduling finale');
-      watchingSubmit = false;
-
-      // 自動遷移（通常はこちらで進む）
-      setTimeout(() => {
-        if(step !== 4) return;
-        startFinale();
-      }, SUBMIT_TO_FINALE_DELAY_MS);
-
-      // 「次へ」表示（A:失敗時のみ / B:送信後に表示）
-      setTimeout(() => {
-        if(step !== 4) return;
-        if(!submitDetected) return;
-        if(manualNext) manualNext.style.display = '';
-      }, MANUAL_NEXT_SHOW_DELAY_MS);
+      const elapsed = performance.now() - formOpenedAt;
+      hud(`formFrame load #${formLoadCount} (elapsed=${Math.round(elapsed)}ms, touched=${touchedForm})`);
+      // load はセクション移動でも起きるので、ここでは何もしない
     });
 
     // タップで進む（フォーム上は無視）
@@ -1391,24 +1380,52 @@
     closeForm.addEventListener('click', closeFormOverlay);
     manualNext.addEventListener('click', () => {
       if(step !== 4) return;
-      // 未送信でフローを抜けられないようガード
       if(!submitDetected){
-        hud('manualNext blocked: submit not detected');
+        hud('manualNext blocked: sentCheck not confirmed');
         return;
       }
       watchingSubmit = false;
       startFinale();
     });
-    // フォーム内で「送信ボタン」が押された可能性を検知
-    formFrame.addEventListener('load', () => {
+    if(sentCheck){
+      sentCheck.addEventListener('change', () => {
+        if(step !== 4) return;
+        const ok = !!sentCheck.checked;
+        submitDetected = ok;
+        if(manualNext) manualNext.disabled = !ok;
+        if(ok){
+          if(formHintEl) formHintEl.textContent = '送信を確認しました。右上の「次へ」で完了画面へ進めます。';
+          formOverlay.classList.add('submitted');
+        }else{
+          if(formHintEl) formHintEl.textContent = '送信が完了したら右上の「送信した」にチェックしてください。';
+          formOverlay.classList.remove('submitted');
+        }
+        hud(`sentCheck: ${ok ? 'checked' : 'unchecked'}`);
+      });
+    }
+    // フォーム領域に触れたら「操作した」扱いにする
+    formOverlay.addEventListener('pointerdown', (e) => {
       if(step !== 4) return;
-      // load 直前にフォームを触っていて、かつ一定時間経過していれば「送信意図あり」とみなす
+      // ヘッダー（閉じるボタンなど）を除外。フォーム本体を触った時だけ
+      const inTop = e.target.closest && e.target.closest('.formTop');
+      if(inTop) return;
+      touchedForm = true;
       const elapsed = performance.now() - formOpenedAt;
-      if(touchedForm && elapsed > SUBMIT_MIN_WAIT_MS){
-        submitIntent = true;
-        hud('submit intent detected');
+      if(elapsed > SUBMIT_MIN_WAIT_MS && sentCheckWrap){
+        sentCheckWrap.style.display = '';
+        if(manualNext) manualNext.style.display = '';
       }
-    }, { once: true });
+    }, { passive:true });
+    // ※ iframe 内のイベントは親にバブルしないので、iframe要素自体のタップも拾う
+    formFrame.addEventListener('pointerdown', () => {
+      if(step !== 4) return;
+      touchedForm = true;
+      const elapsed = performance.now() - formOpenedAt;
+      if(elapsed > SUBMIT_MIN_WAIT_MS && sentCheckWrap){
+        sentCheckWrap.style.display = '';
+        if(manualNext) manualNext.style.display = '';
+      }
+    }, { passive:true });
 
     // グローバルエラーをHUDに表示
     window.addEventListener('error', (e) => {
