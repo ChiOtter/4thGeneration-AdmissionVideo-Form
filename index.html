@@ -602,7 +602,7 @@
           <span>送信後、右上の「送信した」チェック＋URL貼り付けで「次へ」が出ます。</span>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
-          <label class="sentCheck" id="sentCheckWrap" style="display:none;">
+          <label class="sentCheck" id="sentCheckWrap">
             <input type="checkbox" id="sentCheck" />
             <span>送信した</span>
             <span class="note">（送信後にチェック）</span>
@@ -615,15 +615,14 @@
             inputmode="url"
             autocomplete="off"
             spellcheck="false"
-            placeholder="送信後の画面URL（…/formResponse）を貼り付け"
-            style="display:none;" />
+            placeholder="送信後の画面URL（…/formResponse）を貼り付け" />
 
-          <span class="proofNote" id="proofNote" style="display:none;">
+          <span class="proofNote" id="proofNote">
             ※ 送信後の確認画面URLを貼ってください
           </span>
 
           <button class="ghost" id="closeForm" type="button">閉じる</button>
-          <button class="ghost" id="manualNext" type="button" style="display:none;" disabled>次へ</button>
+          <button class="ghost" id="manualNext" type="button" disabled>次へ</button>
         </div>
       </div>
       <div class="iframeWrap">
@@ -1326,8 +1325,7 @@
       if(submitUrl) submitUrl.value = '';
       if(manualNext) manualNext.disabled = true;
 
-      // フォーム画面では、最初から「送信した」UIを出しておく（迷子防止）
-      showProofUI();
+      // ここでは表示制御はしない（HTML側で常に見える）。判定だけ行う。
 
       // display 切替直後はレイアウト反映前のことがあるので次フレームで判定
       requestAnimationFrame(() => {
@@ -1338,7 +1336,6 @@
     function openForm(){
       step = 4;
       showForm();
-      showProofUI();
       boostPetals(1400);
 
       resetManualProof();
@@ -1357,12 +1354,7 @@
       if(submitUrl) submitUrl.value = '';
       if(manualNext){
         manualNext.disabled = true;
-        manualNext.style.display = 'none';
       }
-      // 次回 openForm で再表示する
-      if(sentCheckWrap) sentCheckWrap.style.display = 'none';
-      if(submitUrl) submitUrl.style.display = 'none';
-      if(proofNote) proofNote.style.display = 'none';
 
       hud('closeFormOverlay');
     }
