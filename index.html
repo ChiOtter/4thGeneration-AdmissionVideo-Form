@@ -1525,10 +1525,20 @@
 
 
     // Info modal events
-    if(infoBtn) infoBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openInfo();
-    });
+    // NOTE: The global progression handler is bound to `pointerdown` on window.
+    // So we must stop propagation on *pointerdown* as well, not only on click.
+    if(infoBtn){
+      infoBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }, { passive:false });
+
+      infoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openInfo();
+      });
+    }
+
     if(infoClose) infoClose.addEventListener('click', (e) => {
       e.stopPropagation();
       closeInfo();
