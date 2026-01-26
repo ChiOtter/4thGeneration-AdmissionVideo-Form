@@ -1238,17 +1238,9 @@
 
       const checked = !!(sentCheck && sentCheck.checked);
       const ok = checked;
-
       submitDetected = ok;
-
-      if(manualNext){
-        manualNext.disabled = !ok;
-      }
-
-      if(formHintEl){
-        formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT;
-      }
-
+      if(manualNext){ manualNext.disabled = !ok; }
+      if(formHintEl){ formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT; }
       hud(`proof: checked=${checked}`);
     }
 
