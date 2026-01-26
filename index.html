@@ -436,12 +436,12 @@
     .finaleText h1{ font-size:26px; margin:0 0 10px; }
     .finaleText p{ margin:0; color: rgba(31,41,51,.68); }
 
-    /* Finale credit (bottom-left) */
-    .finaleCredit{
+    /* Global credit (always bottom-left) */
+    #globalCredit{
       position: fixed;
       left: 18px;
       bottom: 18px;
-      z-index: 10001; /* above petalsFront */
+      z-index: 100000; /* above any canvas/layer */
       font-size: 12px;
       letter-spacing: .02em;
       color: rgba(31,41,51,.60);
@@ -622,11 +622,12 @@
       <p>神山での毎日が、あなたにとって素敵な日々になりますように！</p>
       <div class="hint">これでフォームはおわりです。回答ありがとうございました。</div>
     </div>
-    <div class="finaleCredit" aria-hidden="true">在学生一同（代表）</div>
   </div>
 
   <!-- debug HUD (must be inside body before script runs) -->
   <div id="debugHud" aria-hidden="true"></div>
+
+  <div id="globalCredit" aria-hidden="true">在学生一同（代表）</div>
 
   <div id="clickHint" aria-hidden="true">封筒をクリックしてください</div>
 
