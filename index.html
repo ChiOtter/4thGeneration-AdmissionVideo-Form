@@ -1239,13 +1239,24 @@
       const checked = !!(sentCheck && sentCheck.checked);
       const ok = checked;
       submitDetected = ok;
+
       if(manualNext){
+        // 互換性のため、property と attribute の両方を確実に同期
         manualNext.disabled = !ok;
-        if(ok) manualNext.removeAttribute('disabled');
-        else manualNext.setAttribute('disabled','');
+        if(ok){
+          manualNext.removeAttribute('disabled');
+          manualNext.setAttribute('aria-disabled', 'false');
+        }else{
+          manualNext.setAttribute('disabled', '');
+          manualNext.setAttribute('aria-disabled', 'true');
+        }
       }
-      if(formHintEl){ formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT; }
-      hud(`proof: checked=${checked}`);
+
+      if(formHintEl){
+        formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT;
+      }
+
+      hud(`proof: checked=${checked}, ok=${ok}, btnDisabled=${manualNext ? manualNext.disabled : 'n/a'}`);
     }
 
     function resetManualProof(){
@@ -1253,8 +1264,10 @@
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(sentCheck) sentCheck.checked = false;
       if(manualNext) manualNext.disabled = true;
-      if(manualNext) manualNext.setAttribute('disabled','');
-      showProofUI();
+      if(manualNext){
+        manualNext.setAttribute('disabled','');
+        manualNext.setAttribute('aria-disabled','true');
+      }
 
       // display 切替直後はレイアウト反映前のことがあるので次フレームで判定
       requestAnimationFrame(() => {
@@ -1268,6 +1281,7 @@
       boostPetals(1400);
 
       resetManualProof();
+      requestAnimationFrame(updateManualNext);
       hud(`openForm: step=${step} (manual-only)`);
     }
 
@@ -1304,16 +1318,14 @@
 
     // 入力に応じて随時判定
     if(sentCheck){
-      sentCheck.addEventListener('change', () => {
+      const onProofToggle = () => {
         if(step !== 4) return;
-        // checked 状態の反映後に判定
+        // 反映タイミングがズレる環境対策：次フレームで判定
         requestAnimationFrame(updateManualNext);
-      });
-      // Safari/一部環境の保険（change が遅延することがある）
-      sentCheck.addEventListener('click', () => {
-        if(step !== 4) return;
-        requestAnimationFrame(updateManualNext);
-      });
+      };
+      sentCheck.addEventListener('change', onProofToggle);
+      sentCheck.addEventListener('input', onProofToggle);
+      sentCheck.addEventListener('click', onProofToggle);
     }
 
     if(manualNext) manualNext.addEventListener('click', () => {
