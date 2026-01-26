@@ -587,7 +587,7 @@
         <div id="sentinel" style="height:1px;"></div>
         <div class="toForm" id="toForm">
           <button class="btn" id="toFormBtn" type="button">フォームへ進む</button>
-          <div class="tapAny">フォーム送信後、右上の「送信した」にチェック＋URL貼り付けで「次へ」が出ます。</div>
+          <div class="tapAny">フォーム送信後、右上の「送信した」にチェックすると「次へ」が押せます。</div>
         </div>
       </div>
     </div>
@@ -599,7 +599,7 @@
       <div class="formTop">
         <div class="t">
           <strong>フォーム記入</strong>
-          <span>送信後、右上の「送信した」チェック＋URL貼り付けで「次へ」が出ます。</span>
+          <span>送信後、右上の「送信した」にチェックすると「次へ」が押せます。</span>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
           <label class="sentCheck" id="sentCheckWrap">
@@ -607,20 +607,6 @@
             <span>送信した</span>
             <span class="note">（送信後にチェック）</span>
           </label>
-
-          <input
-            id="submitUrl"
-            class="proofInput"
-            type="url"
-            inputmode="url"
-            autocomplete="off"
-            spellcheck="false"
-            placeholder="送信後の画面URL（…/formResponse）を貼り付け" />
-
-          <span class="proofNote" id="proofNote">
-            ※ 送信後の確認画面URLを貼ってください
-          </span>
-
           <button class="ghost" id="closeForm" type="button">閉じる</button>
           <button class="ghost" id="manualNext" type="button" disabled>次へ</button>
         </div>
@@ -1118,9 +1104,7 @@
     const formHintEl = document.querySelector('#formOverlay .formTop .t span');
     const sentCheckWrap = document.getElementById('sentCheckWrap');
     const sentCheck = document.getElementById('sentCheck');
-    const submitUrl = document.getElementById('submitUrl');
-    const proofNote = document.getElementById('proofNote');
-    const FORM_HINT_DEFAULT = '送信後、右上の「送信した」にチェック → URL貼り付けで「次へ」が出ます。';
+    const FORM_HINT_DEFAULT = '送信後、右上の「送信した」にチェックすると「次へ」が押せます。';
     const FORM_HINT_SUBMITTED = '送信を確認しました。右上の「次へ」で完了画面へ進めます。';
     let submitDetected = false;
 
@@ -1250,35 +1234,17 @@
     // Section navigation (Next/Back) can trigger iframe reloads, so we DO NOT attempt any automatic submit detection.
     // Proceed condition (manual):
     //   1) User checks "送信した"
-    //   2) User pastes the post-submit URL that includes `/formResponse`
-
-    function normalizeUrl(s){
-      return String(s || '').trim();
-    }
-
-    // Post-submit confirmation pages are commonly `.../formResponse`
-    function looksLikeSubmitProof(url){
-      const u = normalizeUrl(url);
-      if(!u) return false;
-      const isGoogleForms = /https?:\/\/(docs\.google\.com\/forms|forms\.gle)\//i.test(u);
-      const hasFormResponse = /\/formResponse\b/i.test(u) || /formResponse\?/i.test(u);
-      return isGoogleForms && hasFormResponse;
-    }
 
     function showProofUI(){
       // Explicit display values so we reliably override inline style="display:none;"
       // and so the flex header layout stays stable.
       if(sentCheckWrap) sentCheckWrap.style.display = 'inline-flex';
-      if(submitUrl) submitUrl.style.display = 'block';
-      if(proofNote) proofNote.style.display = 'inline';
       if(manualNext) manualNext.style.display = 'inline-block';
       hud('showProofUI');
     }
 
     function hideProofUI(){
       if(sentCheckWrap) sentCheckWrap.style.display = 'none';
-      if(submitUrl) submitUrl.style.display = 'none';
-      if(proofNote) proofNote.style.display = 'none';
       if(manualNext) manualNext.style.display = 'none';
       hud('hideProofUI');
     }
@@ -1286,12 +1252,11 @@
     function updateManualNext(){
       if(step !== 4) return;
 
-      // 「次へ」は常に表示（ただし条件を満たすまで disabled）
+      // 「次へ」は常に表示（ただしチェックされるまで disabled）
       showProofUI();
 
       const checked = !!(sentCheck && sentCheck.checked);
-      const okUrl = !!(submitUrl && looksLikeSubmitProof(submitUrl.value));
-      const ok = checked && okUrl;
+      const ok = checked;
 
       submitDetected = ok;
 
@@ -1303,29 +1268,14 @@
         formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT;
       }
 
-      if(proofNote){
-        if(!checked){
-          proofNote.textContent = '※ 送信が完了したら「送信した」にチェックしてください';
-        }else if(!(submitUrl && submitUrl.value)){
-          proofNote.textContent = '※ 送信後の確認画面URL（…/formResponse）を貼ってください';
-        }else if(!okUrl){
-          proofNote.textContent = '※ URLが確認画面ではないようです（…/formResponse を含むURLを貼ってください）';
-        }else{
-          proofNote.textContent = 'OK：送信確認できました。右の「次へ」で進めます';
-        }
-      }
-
-      hud(`proof: checked=${checked}, urlOk=${okUrl}`);
+      hud(`proof: checked=${checked}`);
     }
 
     function resetManualProof(){
       submitDetected = false;
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(sentCheck) sentCheck.checked = false;
-      if(submitUrl) submitUrl.value = '';
       if(manualNext) manualNext.disabled = true;
-
-      // ここでは表示制御はしない（HTML側で常に見える）。判定だけ行う。
 
       // display 切替直後はレイアウト反映前のことがあるので次フレームで判定
       requestAnimationFrame(() => {
@@ -1351,7 +1301,6 @@
       formOverlay.classList.remove('submitted');
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(sentCheck) sentCheck.checked = false;
-      if(submitUrl) submitUrl.value = '';
       if(manualNext){
         manualNext.disabled = true;
       }
@@ -1377,17 +1326,6 @@
     // 入力に応じて随時判定
     if(sentCheck){
       sentCheck.addEventListener('change', () => {
-        if(step !== 4) return;
-        updateManualNext();
-      });
-    }
-
-    if(submitUrl){
-      submitUrl.addEventListener('input', () => {
-        if(step !== 4) return;
-        updateManualNext();
-      });
-      submitUrl.addEventListener('change', () => {
         if(step !== 4) return;
         updateManualNext();
       });
