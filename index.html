@@ -436,19 +436,82 @@
     .finaleText h1{ font-size:26px; margin:0 0 10px; }
     .finaleText p{ margin:0; color: rgba(31,41,51,.68); }
 
-    /* Global credit (always bottom-left) */
-    #globalCredit{
+</style>
+    /* Info button + modal (blocks background interaction) */
+    #infoBtn{
       position: fixed;
-      left: 18px;
+      right: 18px;
       bottom: 18px;
-      z-index: 100000; /* above any canvas/layer */
-      font-size: 12px;
-      letter-spacing: .02em;
-      color: rgba(31,41,51,.60);
-      text-shadow: 0 1px 10px rgba(255,255,255,.55);
-      pointer-events: none;
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      border: 1px solid rgba(31,41,51,.14);
+      background: rgba(255,255,255,.78);
+      color: rgba(31,41,51,.78);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      z-index: 100000; /* above layers/canvas */
+      box-shadow: 0 10px 28px rgba(0,0,0,.12);
+      backdrop-filter: saturate(1.05) blur(6px);
       user-select: none;
-      white-space: nowrap;
+      -webkit-tap-highlight-color: transparent;
+      pointer-events: auto;
+    }
+    #infoBtn:hover{ filter: brightness(1.02); }
+    #infoBtn:active{ transform: translateY(1px); }
+    #infoBtn svg{ width: 18px; height: 18px; }
+
+    #infoOverlay{
+      position: fixed;
+      inset: 0;
+      display: none; /* shown by JS */
+      place-items: center;
+      z-index: 200000; /* top-most */
+      background: rgba(0,0,0,.35);
+      backdrop-filter: blur(6px);
+      pointer-events: auto; /* capture all interactions */
+    }
+    #infoOverlay.show{ display: grid; }
+
+    .infoCard{
+      width: min(780px, calc(100vw - 32px));
+      max-height: min(78vh, 900px);
+      overflow: auto;
+      background: rgba(255,255,255,.90);
+      color: rgba(31,41,51,.90);
+      border: 1px solid rgba(0,0,0,.08);
+      border-radius: 22px;
+      box-shadow: 0 18px 55px rgba(0,0,0,.30);
+      padding: 18px 18px 16px;
+      position: relative;
+    }
+
+    .infoClose{
+      position: absolute;
+      right: 14px;
+      top: 14px;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid rgba(31,41,51,.14);
+      background: rgba(255,255,255,.82);
+      color: rgba(31,41,51,.78);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(0,0,0,.10);
+      backdrop-filter: saturate(1.05) blur(6px);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .infoClose:active{ transform: translateY(1px); }
+
+    .infoBody{
+      padding-top: 6px;
+      font-size: 14px;
+      line-height: 1.8;
+      color: rgba(31,41,51,.78);
+      white-space: pre-wrap; /* テキストだけで改行しやすく */
     }
 </style>
   <style>
@@ -629,6 +692,27 @@
 
   <div id="globalCredit" aria-hidden="true">在学生一同（代表）</div>
 
+  <!-- info button (bottom-right) -->
+  <button id="infoBtn" type="button" aria-label="インフォメーションを開く">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4.6c.77 0 1.4.63 1.4 1.4s-.63 1.4-1.4 1.4-1.4-.63-1.4-1.4.63-1.4 1.4-1.4zm1.7 12.3H10.6v-1.6h1.2v-4.8h-1.2v-1.6h3.1v6.4h1v1.6z" fill="currentColor"/>
+    </svg>
+  </button>
+
+  <!-- info modal overlay (center) -->
+  <div id="infoOverlay" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="infoCard" role="document">
+      <button class="infoClose" id="infoClose" type="button" aria-label="閉じる">×</button>
+      <div class="infoBody" id="infoBody">
+（ダミー）ここにインフォメーション本文が入ります。
+テキストのみで構成してください。
+
+・項目A
+・項目B
+      </div>
+    </div>
+  </div>
+
   <div id="clickHint" aria-hidden="true">封筒をクリックしてください</div>
 
   <script>
@@ -641,6 +725,25 @@
     const formOverlay= document.getElementById('formOverlay');
     const finale     = document.getElementById('finale');
     const clickHint  = document.getElementById('clickHint');
+
+    // Info modal
+    const infoBtn = document.getElementById('infoBtn');
+    const infoOverlay = document.getElementById('infoOverlay');
+    const infoClose = document.getElementById('infoClose');
+
+    function openInfo(){
+      if(!infoOverlay) return;
+      infoOverlay.classList.add('show');
+      infoOverlay.setAttribute('aria-hidden', 'false');
+      hud('openInfo');
+    }
+
+    function closeInfo(){
+      if(!infoOverlay) return;
+      infoOverlay.classList.remove('show');
+      infoOverlay.setAttribute('aria-hidden', 'true');
+      hud('closeInfo');
+    }
 
     const canvasBack = document.getElementById('petals');
     const canvasFront= document.getElementById('petalsFront');
@@ -1381,6 +1484,9 @@
       const inForm = e.target.closest && e.target.closest('#formOverlay');
       if(inForm) return;
 
+      // When info modal is open, block all background transitions
+      if(infoOverlay && infoOverlay.classList.contains('show')) return;
+
       // Intro だけは「どこでもタップで開始」OK
       if(step === 0){
         step = 1;
@@ -1399,6 +1505,28 @@
       e.stopPropagation();
       if(step === 1) openEnvelope();
       // step===2 では自動で手紙が開く
+    });
+
+
+    // Info modal events
+    if(infoBtn) infoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInfo();
+    });
+    if(infoClose) infoClose.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeInfo();
+    });
+
+    // モーダル表示中は、クリックを吸収して背後に伝播させない
+    if(infoOverlay) infoOverlay.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+    });
+
+    // Escape でも閉じる（任意だけど便利）
+    window.addEventListener('keydown', (e) => {
+      if(!infoOverlay || !infoOverlay.classList.contains('show')) return;
+      if(e.key === 'Escape') closeInfo();
     });
 
 
