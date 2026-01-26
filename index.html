@@ -1241,14 +1241,18 @@
       submitDetected = ok;
 
       if(manualNext){
-        // 互換性のため、property と attribute の両方を確実に同期
+        // まず属性を一旦クリアしてから、プロパティを決定（ブラウザ癖対策）
+        manualNext.removeAttribute('disabled');
+        manualNext.removeAttribute('aria-disabled');
+
         manualNext.disabled = !ok;
-        if(ok){
-          manualNext.removeAttribute('disabled');
-          manualNext.setAttribute('aria-disabled', 'false');
-        }else{
+        manualNext.setAttribute('aria-disabled', ok ? 'false' : 'true');
+
+        // 属性とプロパティを最終的に同期
+        if(manualNext.disabled){
           manualNext.setAttribute('disabled', '');
-          manualNext.setAttribute('aria-disabled', 'true');
+        }else{
+          manualNext.removeAttribute('disabled');
         }
       }
 
@@ -1301,6 +1305,21 @@
       hud('closeFormOverlay');
     }
 
+    function startFinale(){
+      step = 5;
+      showFinale();
+      megaStorm();
+
+      if(finaleText){
+        finaleText.classList.remove('show');
+        setTimeout(() => {
+          if(step !== 5) return;
+          finaleText.classList.add('show');
+        }, 700);
+      }
+      hud('startFinale');
+    }
+
     // IMPORTANT: We intentionally do nothing on iframe load.
     // This prevents section navigation reloads from causing any "submitted" behavior.
     if(formFrame){
@@ -1332,7 +1351,7 @@
       if(step !== 4) return;
       updateManualNext();
       if(!submitDetected){
-        hud('manualNext blocked: proof not satisfied');
+        hud(`manualNext blocked: proof not satisfied (checked=${sentCheck ? sentCheck.checked : 'n/a'})`);
         return;
       }
       startFinale();
