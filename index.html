@@ -1500,6 +1500,10 @@
       const inForm = e.target.closest && e.target.closest('#formOverlay');
       if(inForm) return;
 
+      // Infoボタン/Infoモーダル上の操作では、下層の進行判定を絶対にさせない
+      const inInfo = e.target.closest && (e.target.closest('#infoBtn') || e.target.closest('#infoOverlay'));
+      if(inInfo) return;
+
       // When info modal is open, block all background transitions
       if(infoOverlay && infoOverlay.classList.contains('show')) return;
 
@@ -1528,6 +1532,13 @@
     // NOTE: The global progression handler is bound to `pointerdown` on window.
     // So we must stop propagation on *pointerdown* as well, not only on click.
     if(infoBtn){
+      // 進行判定は window の pointerdown なので、capture で先に止める
+      infoBtn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }, { passive:false, capture:true });
+
+      // 念のため bubble 側でも止める
       infoBtn.addEventListener('pointerdown', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1535,6 +1546,7 @@
 
       infoBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
         openInfo();
       });
     }
@@ -1547,7 +1559,8 @@
     // モーダル表示中は、クリックを吸収して背後に伝播させない
     if(infoOverlay) infoOverlay.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-    });
+      e.preventDefault();
+    }, { passive:false, capture:true });
 
     // Escape でも閉じる（任意だけど便利）
     window.addEventListener('keydown', (e) => {
