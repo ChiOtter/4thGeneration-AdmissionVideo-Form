@@ -436,7 +436,23 @@
     .finaleText h1{ font-size:26px; margin:0 0 10px; }
     .finaleText p{ margin:0; color: rgba(31,41,51,.68); }
 
-</style>
+    /* Global credit (always visible, bottom-left) */
+    #globalCredit{
+      position: fixed;
+      left: 14px;
+      bottom: 12px;
+      z-index: 90000;
+      font-size: 12px;
+      letter-spacing: .02em;
+      color: rgba(31,41,51,.55);
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 2px 10px rgba(255,255,255,.65);
+    }
+
+  </style>
+
+  <style>
     /* Info button + modal (blocks background interaction) */
     #infoBtn{
       position: fixed;
@@ -513,7 +529,7 @@
       color: rgba(31,41,51,.78);
       white-space: pre-wrap; /* テキストだけで改行しやすく */
     }
-</style>
+  </style>
   <style>
     #clickHint{
       position:fixed;
@@ -690,7 +706,7 @@
   <!-- debug HUD (must be inside body before script runs) -->
   <div id="debugHud" aria-hidden="true"></div>
 
-  <div id="globalCredit" aria-hidden="true">在学生一同（代表）</div>
+  <div id="globalCredit" aria-hidden="false">在学生一同（代表）</div>
 
   <!-- info button (bottom-right) -->
   <button id="infoBtn" type="button" aria-label="インフォメーションを開く">
