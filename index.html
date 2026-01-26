@@ -1239,7 +1239,11 @@
       const checked = !!(sentCheck && sentCheck.checked);
       const ok = checked;
       submitDetected = ok;
-      if(manualNext){ manualNext.disabled = !ok; }
+      if(manualNext){
+        manualNext.disabled = !ok;
+        if(ok) manualNext.removeAttribute('disabled');
+        else manualNext.setAttribute('disabled','');
+      }
       if(formHintEl){ formHintEl.textContent = ok ? FORM_HINT_SUBMITTED : FORM_HINT_DEFAULT; }
       hud(`proof: checked=${checked}`);
     }
@@ -1249,6 +1253,8 @@
       if(formHintEl) formHintEl.textContent = FORM_HINT_DEFAULT;
       if(sentCheck) sentCheck.checked = false;
       if(manualNext) manualNext.disabled = true;
+      if(manualNext) manualNext.setAttribute('disabled','');
+      showProofUI();
 
       // display 切替直後はレイアウト反映前のことがあるので次フレームで判定
       requestAnimationFrame(() => {
@@ -1300,7 +1306,13 @@
     if(sentCheck){
       sentCheck.addEventListener('change', () => {
         if(step !== 4) return;
-        updateManualNext();
+        // checked 状態の反映後に判定
+        requestAnimationFrame(updateManualNext);
+      });
+      // Safari/一部環境の保険（change が遅延することがある）
+      sentCheck.addEventListener('click', () => {
+        if(step !== 4) return;
+        requestAnimationFrame(updateManualNext);
       });
     }
 
